@@ -47,9 +47,9 @@ dashboard-layout/
 mkdir -p /home/keyhelp/www/keyhelp/dashboard-layout
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 
-wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.0/plugin_stats.php
-wget -O download_box.conf https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.0/download_box.conf
-wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.0/download_box.js
+wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/plugin_stats.php
+wget -O download_box.conf https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/download_box.conf.example
+wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/download_box.js
 ```
 
 **Option B: check out via `git`** (later updates are a simple `git pull`, see [Updating](#updating)).
@@ -144,6 +144,7 @@ With the wget install, repeat the `wget` commands for `plugin_stats.php` and `do
 - **Initial Release**: Added the 3-column GitHub Release Downloads dashboard widget (`download_box.js`), PHP stats endpoint (`plugin_stats.php`), and `.conf`-based configuration (`download_box.conf`).
 - **Older Releases Popup**: Added a floating popup with release badges and dividers to inspect historical release downloads without expanding column heights.
 - **Theme & Locale Support**: Added automatic Dark/Light mode detection, German/English UI labels, and `pluginStatsBoxReady` event integration.
+
 #### v1.0.1 (2026-11-23) Thanks to [24unix](https://github.com/24unix) for adding Gitea/Forgejo support!
 - **Gitea & Forgejo Support**: Added automatic detection for self-hosted Gitea/Forgejo repositories (`/api/v1/repos/...`) alongside `github.com` URLs in `plugin_stats.php`.
 - **Full Release Pagination**: Added page-by-page release fetching (`per_page` on GitHub and `limit` / `X-Total-Count` on Gitea) so total download counts include all historical releases beyond the first page.
