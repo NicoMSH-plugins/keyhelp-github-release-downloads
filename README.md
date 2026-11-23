@@ -150,4 +150,10 @@ With the wget install, repeat the `wget` commands for `plugin_stats.php` and `do
 - **Full Release Pagination**: Added page-by-page release fetching (`per_page` on GitHub and `limit` / `X-Total-Count` on Gitea) so total download counts include all historical releases beyond the first page.
 - **UI & Error Handling**: Renamed the card header to *Release Downloads*, added platform-specific GitHub/Git icons per column, and displayed API error messages directly inside affected columns.
 - **Config Template & Git Setup**: Replaced the tracked `download_box.conf` with `download_box.conf.example` so local configurations remain untouched during `git pull` updates.
+
+#### 1.0.2 ( 2026-11-23)
+- **Added:** Status footer in the Release Downloads card displaying the installed version and current status.
+- **Added:** Automatic update check against `origin/main` with a one-click **Update** button in the dashboard when newer commits are available.
+- **Added:** Server-side `POST ?action=update` endpoint in `plugin_stats.php` to run `git pull --ff-only origin main` cleanly.
+- **Improved:** HTML escaping and theme styling for the status footer and update controls in dark and light mode.
 </details>
