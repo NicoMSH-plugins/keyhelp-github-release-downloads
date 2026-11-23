@@ -386,9 +386,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             <div class="card" id="plugin-stats-card" style="margin-top: 0 !important; margin-bottom: 1.5rem !important;">
                 <header class="card-header">
                     <span class="card-header-icon">
-                        <i class="fab fa-github" style="color: var(--kh-dl-muted);"></i>
+                        <i class="fas fa-download" style="color: var(--kh-dl-muted);"></i>
                     </span>
-                    <p class="card-header-title" style="font-size: 15px;">${isGerman ? 'GitHub Release Downloads' : 'GitHub Release Downloads'}</p>
+                    <p class="card-header-title" style="font-size: 15px;">Release Downloads</p>
                     <span class="card-header-icon" id="plugin-stats-updated" style="font-size: 12px; color: var(--kh-dl-muted); padding-right: 1rem;">
                         ${isGerman ? 'Lade...' : 'Loading...'}
                     </span>
@@ -481,8 +481,11 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
         function formatRepoTitle(repo) {
             const parts = String(repo || '').split('/');
-            const repoName = parts.length > 1 ? parts[1] : parts[0];
-            return 'GH: ' + repoName;
+            return parts.length > 1 ? parts[1] : parts[0];
+        }
+
+        function forgeIconClass(forge) {
+            return forge === 'gitea' ? 'fab fa-git-alt' : 'fab fa-github';
         }
 
         function renderFileRows(assets) {
@@ -539,8 +542,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             const latestTag = (ghData && ghData.latest) ? ghData.latest : '-';
             const releases = (ghData && Array.isArray(ghData.releases)) ? ghData.releases : [];
             const titleText = formatRepoTitle(ghData.repo);
-            const repoKey = String(ghData.repo || ('repo-' + idx));
+            const repoKey = String(ghData.url || ghData.repo || ('repo-' + idx));
             const repoUrl = ghData.url || (ghData.repo ? `https://github.com/${ghData.repo}` : '');
+            const iconClass = forgeIconClass(ghData.forge);
 
             const safeTitleText = $('<div>').text(titleText).html();
             const safeLatestTag = $('<div>').text(latestTag).html();
@@ -551,9 +555,11 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitleText}</a>`
                 : safeTitleText;
 
-            const latestRowsHtml = releases.length
-                ? renderFileRows(releases[0].assets)
-                : `<div class="kh-dl-empty">-</div>`;
+            const latestRowsHtml = ghData.error
+                ? `<div class="kh-dl-empty" style="color: #dc2626;">${$('<div>').text(String(ghData.error)).html()}</div>`
+                : releases.length
+                    ? renderFileRows(releases[0].assets)
+                    : `<div class="kh-dl-empty">-</div>`;
 
             const olderTriggerHtml = renderOlderTrigger(repoKey, titleText, releases);
 
@@ -561,7 +567,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 <div class="kh-dl-col">
                     <div class="kh-dl-col-header">
                         <h4 class="kh-dl-col-title">
-                            <i class="fab fa-github" style="margin-right: 6px; color: var(--kh-dl-muted);"></i>${titleHtml}
+                            <i class="${iconClass}" style="margin-right: 6px; color: var(--kh-dl-muted);"></i>${titleHtml}
                         </h4>
                         <span class="kh-dl-col-total">${safeTotal}</span>
                     </div>
@@ -592,8 +598,8 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             let items = Array.isArray(data.items) ? data.items : [];
             if (!items.length) {
                 let emptyMsg = isGerman
-                    ? 'Keine GitHub-URLs in <code>download_box.conf</code> eingetragen. Bitte die <code>download_box.conf</code> bearbeiten und mindestens eine Repository-URL hinzufügen.'
-                    : 'No GitHub URLs found in <code>download_box.conf</code>. Please edit <code>download_box.conf</code> and add at least one repository URL.';
+                    ? 'Keine Repository-URLs (GitHub/Gitea) in <code>download_box.conf</code> eingetragen. Falls die Datei fehlt, <code>download_box.conf.example</code> nach <code>download_box.conf</code> kopieren und mindestens eine Repository-URL eintragen.'
+                    : 'No repository URLs (GitHub/Gitea) found in <code>download_box.conf</code>. If the file is missing, copy <code>download_box.conf.example</code> to <code>download_box.conf</code> and add at least one repository URL.';
                 $('#plugin-stats-content').html(`<div class="kh-dl-empty">${emptyMsg}</div>`);
                 syncThemeMode();
                 $(document).trigger('pluginStatsBoxReady');
