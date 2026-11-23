@@ -47,9 +47,9 @@ dashboard-layout/
 mkdir -p /home/keyhelp/www/keyhelp/dashboard-layout
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 
-wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/plugin_stats.php
-wget -O download_box.conf https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/download_box.conf.example
-wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.1/download_box.js
+wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/plugin_stats.php
+wget -O download_box.conf https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/download_box.conf.example
+wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/download_box.js
 ```
 
 **Option B: check out via `git`** (later updates are a simple `git pull`, see [Updating](#updating)).
