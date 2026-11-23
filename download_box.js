@@ -5,7 +5,6 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
     $(function() {
         if ($('#plugin-stats-card').length) return;
 
-        // 1. Ziel-Position finden: zuerst AbuseIPDB, sonst Dashboard-Container / bestehende Karte
         function findDashboardAnchor() {
             let $abuseCard = $('#abuseipdb-status-card');
             if (!$abuseCard.length) {
@@ -51,6 +50,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
         let htmlLang = $('html').attr('lang') || '';
         let isGerman = htmlLang.toLowerCase().startsWith('de');
+        let currentCsrfToken = '';
 
         const olderPayloads = new Map();
 
@@ -100,6 +100,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-badge-bg: rgba(148, 163, 184, 0.12);
                 --kh-dl-badge-border: rgba(148, 163, 184, 0.22);
                 --kh-dl-badge-text: #e2e8f0;
+                --kh-dl-new-bg: rgba(56, 189, 248, 0.15);
+                --kh-dl-new-border: rgba(56, 189, 248, 0.38);
+                --kh-dl-new-text: #7dd3fc;
                 --kh-dl-rel-badge-bg: rgba(99, 102, 241, 0.15);
                 --kh-dl-rel-badge-border: rgba(99, 102, 241, 0.35);
                 --kh-dl-rel-badge-text: #a5b4fc;
@@ -112,6 +115,12 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-upd-border: rgba(34, 197, 94, 0.38);
                 --kh-dl-upd-text: #86efac;
                 --kh-dl-upd-hover: rgba(34, 197, 94, 0.24);
+                --kh-dl-tok-warn-bg: rgba(245, 158, 11, 0.16);
+                --kh-dl-tok-warn-border: rgba(245, 158, 11, 0.42);
+                --kh-dl-tok-warn-text: #fcd34d;
+                --kh-dl-tok-err-bg: rgba(239, 68, 68, 0.15);
+                --kh-dl-tok-err-border: rgba(239, 68, 68, 0.42);
+                --kh-dl-tok-err-text: #fca5a5;
             }
             #plugin-stats-card[data-kh-theme="light"] {
                 --kh-dl-col-bg: #f8fafc;
@@ -124,6 +133,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-badge-bg: #e2e8f0;
                 --kh-dl-badge-border: #cbd5e1;
                 --kh-dl-badge-text: #1e293b;
+                --kh-dl-new-bg: rgba(2, 132, 199, 0.11);
+                --kh-dl-new-border: rgba(2, 132, 199, 0.32);
+                --kh-dl-new-text: #0369a1;
                 --kh-dl-rel-badge-bg: rgba(79, 70, 229, 0.11);
                 --kh-dl-rel-badge-border: rgba(79, 70, 229, 0.3);
                 --kh-dl-rel-badge-text: #4338ca;
@@ -136,6 +148,73 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-upd-border: rgba(21, 128, 61, 0.32);
                 --kh-dl-upd-text: #15803d;
                 --kh-dl-upd-hover: rgba(21, 128, 61, 0.18);
+                --kh-dl-tok-warn-bg: rgba(217, 119, 6, 0.12);
+                --kh-dl-tok-warn-border: rgba(217, 119, 6, 0.38);
+                --kh-dl-tok-warn-text: #b45309;
+                --kh-dl-tok-err-bg: rgba(220, 38, 38, 0.11);
+                --kh-dl-tok-err-border: rgba(220, 38, 38, 0.35);
+                --kh-dl-tok-err-text: #b91c1c;
+            }
+            .kh-dl-token-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.3rem;
+                padding: 0.1rem 0.5rem;
+                border-radius: 999px;
+                font-size: 0.7rem;
+                font-weight: 600;
+                line-height: 1.2;
+                white-space: nowrap;
+            }
+            .kh-dl-token-badge--ok {
+                color: var(--kh-dl-upd-text);
+                background: var(--kh-dl-upd-bg);
+                border: 1px solid var(--kh-dl-upd-border);
+            }
+            .kh-dl-token-badge--warn {
+                color: var(--kh-dl-tok-warn-text);
+                background: var(--kh-dl-tok-warn-bg);
+                border: 1px solid var(--kh-dl-tok-warn-border);
+            }
+            .kh-dl-token-badge--err {
+                color: var(--kh-dl-tok-err-text);
+                background: var(--kh-dl-tok-err-bg);
+                border: 1px solid var(--kh-dl-tok-err-border);
+            }
+            .kh-dl-token-badge--none {
+                color: var(--kh-dl-muted);
+                background: var(--kh-dl-badge-bg);
+                border: 1px solid var(--kh-dl-badge-border);
+            }
+            .kh-dl-header-meta {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.65rem;
+                margin-left: auto;
+                padding-right: 1rem;
+                font-size: 12px;
+                color: var(--kh-dl-muted);
+            }
+            .kh-dl-header-sum {
+                font-weight: 700;
+                color: var(--kh-dl-total);
+                white-space: nowrap;
+            }
+            .kh-dl-refresh-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                border-radius: 5px;
+                border: 1px solid var(--kh-dl-badge-border);
+                background: var(--kh-dl-badge-bg);
+                color: var(--kh-dl-muted);
+                cursor: pointer;
+                padding: 0;
+            }
+            .kh-dl-refresh-btn:hover:not(:disabled) {
+                color: var(--kh-dl-title);
             }
             .kh-dl-columns-grid {
                 display: grid;
@@ -198,6 +277,19 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 white-space: nowrap;
                 flex-shrink: 0;
             }
+            .kh-dl-meta-row {
+                display: flex;
+                align-items: center;
+                gap: 0.55rem;
+                margin-bottom: 0.45rem;
+                font-size: 0.72rem;
+                color: var(--kh-dl-muted);
+            }
+            .kh-dl-meta-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+            }
             .kh-dl-latest-section {
                 display: flex;
                 flex-direction: column;
@@ -207,7 +299,16 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             .kh-dl-version-bar {
                 display: flex;
                 align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 0.35rem;
                 margin-bottom: 0.4rem;
+            }
+            .kh-dl-version-left {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                flex-wrap: wrap;
             }
             .kh-dl-version-badge {
                 display: inline-flex;
@@ -221,6 +322,24 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 color: var(--kh-dl-badge-text);
                 background: var(--kh-dl-badge-bg);
                 border: 1px solid var(--kh-dl-badge-border);
+                white-space: nowrap;
+            }
+            .kh-dl-new-badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 0.1rem 0.45rem;
+                border-radius: 999px;
+                font-size: 0.68rem;
+                font-weight: 700;
+                line-height: 1.2;
+                color: var(--kh-dl-new-text);
+                background: var(--kh-dl-new-bg);
+                border: 1px solid var(--kh-dl-new-border);
+                white-space: nowrap;
+            }
+            .kh-dl-rel-date {
+                font-size: 0.7rem;
+                color: var(--kh-dl-muted);
                 white-space: nowrap;
             }
             .kh-dl-file-list {
@@ -441,9 +560,13 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                         <i class="fas fa-download" style="color: var(--kh-dl-muted);"></i>
                     </span>
                     <p class="card-header-title" style="font-size: 15px;">Release Downloads</p>
-                    <span class="card-header-icon" id="plugin-stats-updated" style="font-size: 12px; color: var(--kh-dl-muted); padding-right: 1rem;">
-                        ${isGerman ? 'Lade...' : 'Loading...'}
-                    </span>
+                    <div class="kh-dl-header-meta">
+                        <span class="kh-dl-header-sum" id="plugin-stats-total-sum"></span>
+                        <span id="plugin-stats-updated">${isGerman ? 'Lade...' : 'Loading...'}</span>
+                        <button type="button" class="kh-dl-refresh-btn" id="kh-dl-refresh-btn" title="${isGerman ? 'Jetzt aktualisieren' : 'Refresh now'}" aria-label="Refresh">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
                 </header>
                 <div class="card-content" style="padding: 0.9rem 1.1rem;">
                     <div id="plugin-stats-content" style="color: var(--kh-dl-muted); font-size: 12px;">
@@ -460,6 +583,25 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
         }
         syncThemeMode();
 
+        function formatShortDate(isoStr) {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toLocaleDateString(isGerman ? 'de-DE' : 'en-US', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        }
+
+        function isNewRelease(isoStr) {
+            if (!isoStr) return false;
+            const d = new Date(isoStr);
+            if (Number.isNaN(d.getTime())) return false;
+            const ageDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
+            return ageDays >= 0 && ageDays <= 7;
+        }
+
         function closeReleasesPopup() {
             $('#kh-dl-releases-popup').remove();
             $(document).off('click.khDlPopup keydown.khDlPopup');
@@ -474,10 +616,14 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             const light = isLightThemeActive();
             const sectionsHtml = payload.releases.map(function(rel) {
                 const safeTag = escapeHtml(rel.tag || '');
+                const dateStr = formatShortDate(rel.published_at);
                 const rowsHtml = renderFileRows(rel.assets);
                 return `
                     <div class="kh-dl-popup-rel-item">
-                        <div class="kh-dl-popup-rel-badge">Release: ${safeTag}</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px;">
+                            <div class="kh-dl-popup-rel-badge" style="margin-bottom:0;">Release: ${safeTag}</div>
+                            ${dateStr ? `<span class="kh-dl-rel-date">${escapeHtml(dateStr)}</span>` : ''}
+                        </div>
                         ${rowsHtml}
                     </div>
                 `;
@@ -607,6 +753,23 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitleText}</a>`
                 : safeTitleText;
 
+            const hasStars = typeof ghData.stars === 'number';
+            const hasIssues = typeof ghData.open_issues === 'number';
+            const metaHtml = (hasStars || hasIssues)
+                ? `
+                    <div class="kh-dl-meta-row">
+                        ${hasStars ? `<span class="kh-dl-meta-item" title="${isGerman ? 'Stars' : 'Stars'}"><i class="far fa-star"></i><span>${escapeHtml(ghData.stars)}</span></span>` : ''}
+                        ${hasIssues ? `<span class="kh-dl-meta-item" title="${isGerman ? 'Offene Issues' : 'Open issues'}"><i class="far fa-dot-circle"></i><span>${escapeHtml(ghData.open_issues)}</span></span>` : ''}
+                    </div>
+                  `
+                : '';
+
+            const latestDateStr = formatShortDate(ghData.latest_date);
+            const isNew = isNewRelease(ghData.latest_date);
+            const newBadgeHtml = isNew
+                ? `<span class="kh-dl-new-badge">${isGerman ? 'NEU' : 'NEW'}</span>`
+                : '';
+
             const latestRowsHtml = ghData.error
                 ? `<div class="kh-dl-empty" style="color: #dc2626;">${escapeHtml(ghData.error)}</div>`
                 : releases.length
@@ -623,10 +786,14 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                         </h4>
                         <span class="kh-dl-col-total">${safeTotal}</span>
                     </div>
-
+                    ${metaHtml}
                     <div class="kh-dl-latest-section">
                         <div class="kh-dl-version-bar">
-                            <span class="kh-dl-version-badge">Latest: ${safeLatestTag}</span>
+                            <div class="kh-dl-version-left">
+                                <span class="kh-dl-version-badge">Latest: ${safeLatestTag}</span>
+                                ${newBadgeHtml}
+                            </div>
+                            ${latestDateStr ? `<span class="kh-dl-rel-date">${escapeHtml(latestDateStr)}</span>` : ''}
                         </div>
                         ${latestRowsHtml}
                     </div>
@@ -636,9 +803,84 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             `;
         }
 
-        function renderStatusFooter(gitInfo) {
-            if (!gitInfo || typeof gitInfo !== 'object') {
+        function renderTokenBadge(tokenStatus) {
+            if (!tokenStatus || typeof tokenStatus !== 'object') {
                 return '';
+            }
+            const configured = Boolean(tokenStatus.configured);
+            const valid = tokenStatus.valid;
+            const rem = (typeof tokenStatus.remaining === 'number') ? tokenStatus.remaining : null;
+            const lim = (typeof tokenStatus.limit === 'number') ? tokenStatus.limit : null;
+            const daysLeft = (typeof tokenStatus.days_left === 'number') ? tokenStatus.days_left : null;
+            const expDateStr = formatShortDate(tokenStatus.expires_at);
+
+            const quotaStr = (rem !== null && lim !== null) ? `${rem}/${lim}` : '';
+            const expTooltip = expDateStr
+                ? (isGerman ? `Ablaufdatum: ${expDateStr}` : `Expires: ${expDateStr}`)
+                : '';
+
+            if (!configured) {
+                const label = isGerman ? 'Kein Token (60/h)' : 'No token (60/h)';
+                const title = isGerman ? 'Kein GITHUB_TOKEN in download_box.conf gesetzt' : 'No GITHUB_TOKEN set in download_box.conf';
+                return `<span class="kh-dl-token-badge kh-dl-token-badge--none" title="${escapeHtml(title)}"><i class="fas fa-key"></i><span>${escapeHtml(label)}</span></span>`;
+            }
+
+            if (valid === false) {
+                const isExpired = (daysLeft !== null && daysLeft <= 0);
+                const label = isExpired
+                    ? (isGerman ? 'Token abgelaufen' : 'Token expired')
+                    : (isGerman ? 'Token ungültig' : 'Token invalid');
+                const titleParts = [
+                    isExpired
+                        ? (isGerman ? 'GITHUB_TOKEN ist abgelaufen' : 'GITHUB_TOKEN has expired')
+                        : (isGerman ? 'GITHUB_TOKEN ist ungültig oder abgelaufen' : 'GITHUB_TOKEN is invalid or expired'),
+                    expTooltip
+                ].filter(Boolean);
+                return `<span class="kh-dl-token-badge kh-dl-token-badge--err" title="${escapeHtml(titleParts.join(' • '))}"><i class="fas fa-exclamation-triangle"></i><span>${escapeHtml(label)}</span></span>`;
+            }
+
+            if (valid === true) {
+                let daysText = '';
+                let badgeClass = 'kh-dl-token-badge--ok';
+                if (daysLeft !== null) {
+                    const dayWord = isGerman
+                        ? (daysLeft === 1 ? 'Tag' : 'Tage')
+                        : (daysLeft === 1 ? 'day' : 'days');
+                    daysText = isGerman ? `noch ${daysLeft} ${dayWord}` : `${daysLeft} ${dayWord} left`;
+                    if (daysLeft <= 14) {
+                        badgeClass = 'kh-dl-token-badge--warn';
+                    }
+                }
+                const label = daysText
+                    ? (isGerman
+                        ? `${daysLeft <= 14 ? 'Token läuft ab' : 'Token gültig'} (${daysText})`
+                        : `${daysLeft <= 14 ? 'Token expiring' : 'Token valid'} (${daysText})`)
+                    : (isGerman ? 'Token gültig' : 'Token valid');
+
+                const titleParts = [
+                    isGerman ? 'GITHUB_TOKEN aktiv' : 'GITHUB_TOKEN active',
+                    expTooltip,
+                    quotaStr ? `API: ${quotaStr}` : ''
+                ].filter(Boolean);
+
+                return `<span class="kh-dl-token-badge ${badgeClass}" title="${escapeHtml(titleParts.join(' • '))}"><i class="fas fa-key"></i><span>${escapeHtml(label)}</span></span>`;
+            }
+
+            const label = isGerman ? 'Token gesetzt' : 'Token set';
+            const titleParts = [
+                isGerman ? 'GITHUB_TOKEN konfiguriert' : 'GITHUB_TOKEN configured',
+                expTooltip,
+                quotaStr ? `API: ${quotaStr}` : ''
+            ].filter(Boolean);
+            return `<span class="kh-dl-token-badge kh-dl-token-badge--none" title="${escapeHtml(titleParts.join(' • '))}"><i class="fas fa-key"></i><span>${escapeHtml(label)}</span></span>`;
+        }
+
+function renderStatusFooter(gitInfo, tokenStatus) {
+            const tokenHtml = renderTokenBadge(tokenStatus);
+            if (!gitInfo || typeof gitInfo !== 'object') {
+                return tokenHtml
+                    ? `<div class="kh-dl-status-footer" id="kh-dl-status-footer"><div class="kh-dl-status-left"></div><div class="kh-dl-status-right">${tokenHtml}</div></div>`
+                    : '';
             }
 
             const currentVer = escapeHtml(gitInfo.current_version || '-');
@@ -649,7 +891,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 ? `Installierte Version: <strong>${currentVer}</strong>`
                 : `Installed version: <strong>${currentVer}</strong>`;
 
-            const rightHtml = hasUpdate
+            const updateHtml = hasUpdate
                 ? `
                     <span style="color: var(--kh-dl-upd-text); font-weight: 600;">
                         ${isGerman ? `Neue Version verfügbar (${latestVer})` : `New version available (${latestVer})`}
@@ -659,16 +901,17 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                         <span>${isGerman ? 'Update' : 'Update'}</span>
                     </button>
                   `
-                : `<span>${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+                : `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
 
             return `
                 <div class="kh-dl-status-footer" id="kh-dl-status-footer">
-                    <div class="kh-dl-status-left">
+                    <div class="kh-dl-status-left" id="kh-dl-status-left">
                         <i class="fab fa-git-alt"></i>
                         <span>${verLabel}</span>
+                        ${updateHtml}
                     </div>
                     <div class="kh-dl-status-right" id="kh-dl-status-right">
-                        ${rightHtml}
+                        ${tokenHtml}
                     </div>
                 </div>
             `;
@@ -692,6 +935,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             $.ajax({
                 url: 'dashboard-layout/plugin_stats.php?action=update',
                 method: 'POST',
+                headers: { 'X-CSRF-Token': currentCsrfToken },
                 dataType: 'json'
             }).done(function(res) {
                 if (res && res.ok) {
@@ -715,36 +959,78 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             });
         });
 
-        // 2. Einmaliger Abruf beim Öffnen des Dashboards (kein setInterval)
-        $.getJSON('dashboard-layout/plugin_stats.php?_=' + Date.now(), function(data) {
-            let updatedTime = data.updated || '-';
-            $('#plugin-stats-updated').text((isGerman ? 'Stand: ' : 'Updated: ') + updatedTime);
+        function loadStats(forceRefresh) {
+            const $refreshBtn = $('#kh-dl-refresh-btn');
+            $refreshBtn.prop('disabled', true);
+            $refreshBtn.find('i').addClass('fa-spin');
 
-            const footerHtml = renderStatusFooter(data.git);
-            let items = Array.isArray(data.items) ? data.items : [];
-            if (!items.length) {
-                let emptyMsg = isGerman
-                    ? 'Keine Repository-URLs (GitHub/Gitea) in <code>download_box.conf</code> eingetragen. Falls die Datei fehlt, <code>download_box.conf.example</code> nach <code>download_box.conf</code> kopieren und mindestens eine Repository-URL eintragen.'
-                    : 'No repository URLs (GitHub/Gitea) found in <code>download_box.conf</code>. If the file is missing, copy <code>download_box.conf.example</code> to <code>download_box.conf</code> and add at least one repository URL.';
-                $('#plugin-stats-content').html(`<div class="kh-dl-empty">${emptyMsg}</div>${footerHtml}`);
-                syncThemeMode();
-                $(document).trigger('pluginStatsBoxReady');
-                return;
+            const ajaxOpts = {
+                url: 'dashboard-layout/plugin_stats.php' + (forceRefresh ? '?refresh=1&_=' + Date.now() : '?_=' + Date.now()),
+                method: 'GET',
+                dataType: 'json'
+            };
+            if (forceRefresh && currentCsrfToken) {
+                ajaxOpts.headers = { 'X-CSRF-Token': currentCsrfToken };
             }
 
-            olderPayloads.clear();
-            const colsHtml = items.map(renderGhColumn).join('');
-            $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>${footerHtml}`);
-            syncThemeMode();
-            $(document).trigger('pluginStatsBoxReady');
-        }).fail(function(jqXHR) {
-            let errMsg = isGerman
-                ? `Konnte plugin_stats.php nicht laden (Status ${jqXHR.status || 'Fehler'}).`
-                : `Failed to load plugin_stats.php (Status ${jqXHR.status || 'Error'}).`;
-            $('#plugin-stats-updated').text(isGerman ? 'Fehler' : 'Error');
-            $('#plugin-stats-content').html(`<div style="color: #dc2626; font-size: 12px;">${errMsg}</div>`);
-            syncThemeMode();
-            $(document).trigger('pluginStatsBoxReady');
+            $.ajax(ajaxOpts).done(function(data) {
+                if (data && data.csrf_token) {
+                    currentCsrfToken = String(data.csrf_token);
+                }
+
+                let updatedTime = data.updated || '-';
+                let staleSuffix = (data && data.stale)
+                    ? (isGerman ? ` (Cache: ${data.stale_from || updatedTime})` : ` (Cached: ${data.stale_from || updatedTime})`)
+                    : '';
+                $('#plugin-stats-updated').text((isGerman ? 'Stand: ' : 'Updated: ') + updatedTime + staleSuffix);
+
+                const footerHtml = renderStatusFooter(data.git, data.token_status);
+                let items = Array.isArray(data.items) ? data.items : [];
+
+                const grandTotal = items.reduce(function(acc, it) {
+                    return acc + (Number(it && it.total) || 0);
+                }, 0);
+                $('#plugin-stats-total-sum').text(
+                    items.length
+                        ? (isGerman ? `Gesamt: ${grandTotal}` : `Total: ${grandTotal}`)
+                        : ''
+                );
+
+                if (!items.length) {
+                    let emptyMsg = isGerman
+                        ? 'Keine Repository-URLs (GitHub/Gitea) in <code>download_box.conf</code> eingetragen. Falls die Datei fehlt, <code>download_box.conf.example</code> nach <code>download_box.conf</code> kopieren und mindestens eine Repository-URL eintragen.'
+                        : 'No repository URLs (GitHub/Gitea) found in <code>download_box.conf</code>. If the file is missing, copy <code>download_box.conf.example</code> to <code>download_box.conf</code> and add at least one repository URL.';
+                    $('#plugin-stats-content').html(`<div class="kh-dl-empty">${emptyMsg}</div>${footerHtml}`);
+                    syncThemeMode();
+                    $(document).trigger('pluginStatsBoxReady');
+                    return;
+                }
+
+                olderPayloads.clear();
+                const colsHtml = items.map(renderGhColumn).join('');
+                $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>${footerHtml}`);
+                syncThemeMode();
+                $(document).trigger('pluginStatsBoxReady');
+            }).fail(function(jqXHR) {
+                let errMsg = isGerman
+                    ? `Konnte plugin_stats.php nicht laden (Status ${jqXHR.status || 'Fehler'}).`
+                    : `Failed to load plugin_stats.php (Status ${jqXHR.status || 'Error'}).`;
+                $('#plugin-stats-updated').text(isGerman ? 'Fehler' : 'Error');
+                $('#plugin-stats-content').html(`<div style="color: #dc2626; font-size: 12px;">${errMsg}</div>`);
+                syncThemeMode();
+                $(document).trigger('pluginStatsBoxReady');
+            }).always(function() {
+                $refreshBtn.prop('disabled', false);
+                $refreshBtn.find('i').removeClass('fa-spin');
+            });
+        }
+
+        $('#kh-dl-refresh-btn').on('click', function(e) {
+            e.preventDefault();
+            loadStats(true);
         });
+
+        // Einmaliger Abruf beim Öffnen des Dashboards
+        loadStats(false);
     });
 }

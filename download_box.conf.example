@@ -5,5 +5,12 @@
 # github.com is queried via api.github.com, any other host as Gitea/Forgejo (/api/v1).
 # Lines starting with # are comments and will be ignored.
 
+# Ein Repository (GitHub oder Gitea/Forgejo) pro Zeile, z. B.:
+# https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads
+# https://git.example.com/owner/repo
+
+# Optional: GitHub Personal Access Token (erhöht das Rate-Limit von 60 auf 5.000 Requests/Stunde)
+# GITHUB_TOKEN=ghp_dein_token_hier
+
 https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads
 # https://gitea.example.com/owner/repo

@@ -5,6 +5,59 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 $confFile = __DIR__ . '/download_box.conf';
 $repoDir  = __DIR__;
 
+$sessionName = (string)ini_get('session.name');
+if ($sessionName === '') {
+    $sessionName = 'PHPSESSID';
+}
+$hasSessionCookie = isset($_COOKIE[$sessionName]) && is_string($_COOKIE[$sessionName]) && $_COOKIE[$sessionName] !== '';
+
+$csrfToken = null;
+$sessionHasCsrf = false;
+
+if ($hasSessionCookie) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    if (session_status() === PHP_SESSION_ACTIVE && session_id() !== '') {
+        $sessionHasCsrf = isset($_SESSION['kh_dl_csrf']) && is_string($_SESSION['kh_dl_csrf']) && $_SESSION['kh_dl_csrf'] !== '';
+        if (!$sessionHasCsrf) {
+            $_SESSION['kh_dl_csrf'] = bin2hex(random_bytes(32));
+        }
+        $csrfToken = $_SESSION['kh_dl_csrf'];
+    }
+}
+
+function isSameOriginRequest(): bool {
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') {
+        return false;
+    }
+    $origin  = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+    $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    $checkUrl = $origin !== '' ? $origin : $referer;
+    if ($checkUrl === '') {
+        return false;
+    }
+    $parsedHost = strtolower((string)(parse_url($checkUrl, PHP_URL_HOST) ?? ''));
+    $parsedPort = parse_url($checkUrl, PHP_URL_PORT);
+    $candidate  = $parsedHost . ($parsedPort ? ':' . $parsedPort : '');
+    return hash_equals($host, $candidate) || hash_equals($host, $parsedHost);
+}
+
+function requireValidCsrfAndOrigin(bool $hasSessionCookie, bool $sessionHasCsrf): bool {
+    if (!$hasSessionCookie || !$sessionHasCsrf || session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+    if (!isSameOriginRequest()) {
+        return false;
+    }
+    $headerToken = (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    $postToken   = (string)($_POST['csrf_token'] ?? '');
+    $token       = $headerToken !== '' ? $headerToken : $postToken;
+    $expected    = (string)($_SESSION['kh_dl_csrf'] ?? '');
+    return $token !== '' && $expected !== '' && hash_equals($expected, $token);
+}
+
 function findGitBinary(): ?string {
     $candidates = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git'];
     foreach ($candidates as $bin) {
@@ -57,7 +110,6 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false): ?array {
         ? $tagRes['output']
         : $localCommit;
 
-    // Remote-Check mit 10-Minuten-Cache, damit nicht jeder Dashboard-Aufruf auf GitHub wartet
     $fetchCacheFile = sys_get_temp_dir() . '/kh_plugin_stats_git_fetch_' . md5($repoDir) . '.json';
     $fetchTtl = 600;
     $remoteInfo = null;
@@ -108,8 +160,23 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false): ?array {
     ];
 }
 
-// POST ?action=update -> führt einen sauberen Fast-Forward-Pull auf origin/main aus
+// POST ?action=update -> geschützt durch bestehende Session, CSRF & Same-Origin-Check + Cooldown
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') === 'update') {
+    if (!requireValidCsrfAndOrigin($hasSessionCookie, $sessionHasCsrf)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Invalid session, CSRF token, or origin.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $cooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_update_lock_' . md5($repoDir) . '.txt';
+    $cooldownSec  = 20;
+    if (file_exists($cooldownFile) && (time() - filemtime($cooldownFile)) < $cooldownSec) {
+        http_response_code(429);
+        echo json_encode(['ok' => false, 'error' => 'Update cooldown active. Please wait a moment.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    @touch($cooldownFile);
+
     if (!is_dir($repoDir . '/.git') || !function_exists('exec')) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Git repository not available.'], JSON_UNESCAPED_UNICODE);
@@ -145,35 +212,43 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') 
     exit;
 }
 
-function parseReposFromConf(string $confPath): array {
+function parseConfig(string $confPath): array {
+    $result = [
+        'repos'        => [],
+        'github_token' => '',
+    ];
     if (!is_readable($confPath)) {
-        return [];
+        return $result;
     }
 
     $lines = file($confPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     if (!is_array($lines)) {
-        return [];
+        return $result;
     }
 
-    $repos = [];
-    $seen  = [];
+    $seen = [];
 
     foreach ($lines as $line) {
         $trimmed = trim($line);
         if ($trimmed === '' || str_starts_with($trimmed, '#') || str_starts_with($trimmed, ';') || str_starts_with($trimmed, '//')) {
             continue;
         }
-        if (str_contains($trimmed, '=')) {
-            [, $trimmed] = explode('=', $trimmed, 2);
-            $trimmed = trim($trimmed, " \t\n\r\0\x0B\"'");
-        }
-        if ($trimmed === '') {
+
+        if (preg_match('/^GITHUB_TOKEN\s*=\s*(.+)$/i', $trimmed, $tm)) {
+            $result['github_token'] = trim($tm[1], " \t\n\r\0\x0B\"'");
             continue;
         }
 
-        $normalizedUrl = rtrim($trimmed, "/ \t\n\r\0\x0B");
-        // https://github.com/owner/repo  -> GitHub
-        // https://<any-other-host>/owner/repo -> Gitea / Forgejo (API under /api/v1)
+        $candidate = $trimmed;
+        if (str_contains($candidate, '=')) {
+            [, $candidate] = explode('=', $candidate, 2);
+            $candidate = trim($candidate, " \t\n\r\0\x0B\"'");
+        }
+        if ($candidate === '') {
+            continue;
+        }
+
+        $normalizedUrl = rtrim($candidate, "/ \t\n\r\0\x0B");
         if (preg_match('#^(https?)://([A-Za-z0-9.-]+(?::\d+)?)/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?$#i', $normalizedUrl, $m)) {
             $scheme    = strtolower($m[1]);
             $host      = strtolower($m[2]);
@@ -185,7 +260,7 @@ function parseReposFromConf(string $confPath): array {
             $key = $host . '/' . strtolower($ownerRepo);
             if (!isset($seen[$key])) {
                 $seen[$key] = true;
-                $repos[] = [
+                $result['repos'][] = [
                     'repo'  => $ownerRepo,
                     'forge' => $isGitHub ? 'github' : 'gitea',
                     'url'   => $isGitHub
@@ -194,73 +269,172 @@ function parseReposFromConf(string $confPath): array {
                     'api'   => $isGitHub
                         ? 'https://api.github.com/repos/' . $ownerRepo . '/releases'
                         : $scheme . '://' . $host . '/api/v1/repos/' . $ownerRepo . '/releases',
+                    'repo_api' => $isGitHub
+                        ? 'https://api.github.com/repos/' . $ownerRepo
+                        : $scheme . '://' . $host . '/api/v1/repos/' . $ownerRepo,
                 ];
             }
         }
     }
 
-    return $repos;
+    return $result;
 }
 
-$repos     = parseReposFromConf($confFile);
-$confHash  = is_readable($confFile) ? md5_file($confFile) : 'empty';
-$cacheFile = sys_get_temp_dir() . '/kh_plugin_stats_gh_' . $confHash . '.json';
-$cacheTtl  = 60; // Sekunden Schutz vor Doppel-Reloads
+$cfg         = parseConfig($confFile);
+$repos       = $cfg['repos'];
+$githubToken = $cfg['github_token'];
 
-if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+$forceRefresh = (($_GET['refresh'] ?? '') === '1');
+if ($forceRefresh) {
+    $origin  = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+    $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    $hasOriginOrReferer = ($origin !== '' || $referer !== '');
+
+    if ($hasOriginOrReferer && !isSameOriginRequest()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Invalid origin for refresh.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (!$hasOriginOrReferer && !$hasSessionCookie) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Session or origin required for refresh.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $refreshCooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_refresh_lock_' . md5($confFile) . '.txt';
+    $refreshCooldownSec  = 5;
+    if (file_exists($refreshCooldownFile) && (time() - filemtime($refreshCooldownFile)) < $refreshCooldownSec) {
+        http_response_code(429);
+        echo json_encode(['ok' => false, 'error' => 'Refresh cooldown active. Please wait a few seconds.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    @touch($refreshCooldownFile);
+}
+
+$confHash   = is_readable($confFile) ? md5_file($confFile) : 'empty';
+$cacheFile  = sys_get_temp_dir() . '/kh_plugin_stats_gh_' . $confHash . '.json';
+$staleFile  = sys_get_temp_dir() . '/kh_plugin_stats_stale_' . $confHash . '.json';
+$cacheTtl   = 600;
+
+if (!$forceRefresh && file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
     $cachedJson = @file_get_contents($cacheFile);
     $cachedArr  = is_string($cachedJson) ? json_decode($cachedJson, true) : null;
-    if (is_array($cachedArr)) {
-        $cachedArr['git'] = getGitStatusInfo($repoDir);
+    if (is_array($cachedArr) && isset($cachedArr['token_status'])) {
+        $cachedArr['git']        = getGitStatusInfo($repoDir);
+        $cachedArr['csrf_token'] = $csrfToken;
         echo json_encode($cachedArr, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         exit;
     }
 }
 
-function fetchJson(string $url): array {
-    $ctx = stream_context_create([
-        'http' => [
-            'method'  => 'GET',
-            'timeout' => 8,
-            'header'  => "User-Agent: KeyHelp-Dashboard-Stats\r\nAccept: application/vnd.github+json\r\n",
-        ],
+$rateLimitInfo = [
+    'limit'      => null,
+    'remaining'  => null,
+    'auth_fail'  => false,
+    'expires_at' => null,
+];
+
+function fetchJson(string $url, string $forge, string $githubToken = ''): array {
+    global $rateLimitInfo;
+
+    $headers = [
+        'User-Agent: KeyHelp-Dashboard-Stats',
+        'Accept: application/vnd.github+json',
+    ];
+    if ($forge === 'github' && $githubToken !== '') {
+        $headers[] = 'Authorization: Bearer ' . $githubToken;
+    }
+
+    $totalCount = null;
+    $rlLimit    = null;
+    $rlRem      = null;
+    $tokExp     = null;
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT        => 6,
+        CURLOPT_TCP_KEEPALIVE  => 1,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_HEADERFUNCTION => function ($ch, $headerLine) use (&$totalCount, &$rlLimit, &$rlRem, &$tokExp) {
+            $len = strlen($headerLine);
+            if (stripos($headerLine, 'X-Total-Count:') === 0) {
+                $totalCount = (int)trim(substr($headerLine, strlen('X-Total-Count:')));
+            } elseif (stripos($headerLine, 'X-RateLimit-Limit:') === 0) {
+                $rlLimit = (int)trim(substr($headerLine, strlen('X-RateLimit-Limit:')));
+            } elseif (stripos($headerLine, 'X-RateLimit-Remaining:') === 0) {
+                $rlRem = (int)trim(substr($headerLine, strlen('X-RateLimit-Remaining:')));
+            } elseif (stripos($headerLine, 'github-authentication-token-expiration:') === 0) {
+                $val = trim(substr($headerLine, strlen('github-authentication-token-expiration:')));
+                if ($val !== '') {
+                    $tokExp = $val;
+                }
+            }
+            return $len;
+        },
     ]);
-    $raw = @file_get_contents($url, false, $ctx);
-    if ($raw === false) {
-        return ['_error' => 'Request fehlgeschlagen'];
+    $raw      = curl_exec($ch);
+    $err      = curl_error($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($forge === 'github') {
+        if ($httpCode === 401) {
+            $rateLimitInfo['auth_fail'] = true;
+        }
+        if ($rlLimit !== null) {
+            $rateLimitInfo['limit'] = $rlLimit;
+        }
+        if ($rlRem !== null) {
+            $rateLimitInfo['remaining'] = $rlRem;
+        }
+        if ($tokExp !== null) {
+            $rateLimitInfo['expires_at'] = $tokExp;
+        }
+    }
+
+    if ($raw === false || !is_string($raw)) {
+        return ['_error' => $err !== '' ? $err : 'Request fehlgeschlagen'];
     }
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
         return ['_error' => 'Ungültiges JSON'];
     }
-
-    // Gitea liefert die Gesamtzahl im Header X-Total-Count (fürs Paging)
-    // PHP 8.4+: http_get_last_response_headers(); $http_response_header ist ab 8.5 deprecated
-    $headers = function_exists('http_get_last_response_headers')
-        ? (http_get_last_response_headers() ?? [])
-        : ($http_response_header ?? []);
-    $totalCount = null;
-    foreach ($headers as $h) {
-        if (stripos($h, 'X-Total-Count:') === 0) {
-            $totalCount = (int)trim(substr($h, strlen('X-Total-Count:')));
-        }
+    if ($httpCode >= 400) {
+        $msg = (string)($decoded['message'] ?? ('HTTP ' . $httpCode));
+        return ['_error' => $msg];
     }
+
     return ['data' => $decoded, 'totalCount' => $totalCount];
 }
 
-// Holt alle Releases seitenweise (GitHub: per_page max. 100, Gitea: limit, Server-Maximum meist 50)
-function fetchAllReleases(string $apiUrl, string $forge): array {
-    $pageSize = $forge === 'github' ? 100 : 50;
+function fetchRepoMeta(string $repoApiUrl, string $forge, string $githubToken = ''): array {
+    $res = fetchJson($repoApiUrl, $forge, $githubToken);
+    if (isset($res['_error']) || !is_array($res['data'] ?? null)) {
+        return ['stars' => null, 'open_issues' => null];
+    }
+    $d = $res['data'];
+    return [
+        'stars'       => isset($d['stargazers_count']) ? (int)$d['stargazers_count'] : (isset($d['stars_count']) ? (int)$d['stars_count'] : null),
+        'open_issues' => isset($d['open_issues_count']) ? (int)$d['open_issues_count'] : null,
+    ];
+}
+
+function fetchAllReleases(string $apiUrl, string $forge, string $githubToken = ''): array {
+    $pageSize  = $forge === 'github' ? 100 : 50;
     $sizeParam = $forge === 'github' ? 'per_page' : 'limit';
-    $all = [];
+    $all       = [];
 
     for ($page = 1; $page <= 20; $page++) {
-        $res = fetchJson("{$apiUrl}?{$sizeParam}={$pageSize}&page={$page}");
+        $res = fetchJson("{$apiUrl}?{$sizeParam}={$pageSize}&page={$page}", $forge, $githubToken);
         if (!isset($res['_error']) && !array_is_list($res['data'])) {
             $res = ['_error' => (string)($res['data']['message'] ?? 'Unerwartete API-Antwort')];
         }
         if (isset($res['_error'])) {
-            // Fehler auf einer Folgeseite: bereits geladene Releases behalten
             if ($all) {
                 break;
             }
@@ -277,7 +451,6 @@ function fetchAllReleases(string $apiUrl, string $forge): array {
                 break;
             }
         } elseif ($forge === 'github' && count($rels) < $pageSize) {
-            // Gitea ohne X-Total-Count: weiter bis zur leeren Seite (Server-Maximum kann < limit sein)
             break;
         }
     }
@@ -285,21 +458,24 @@ function fetchAllReleases(string $apiUrl, string $forge): array {
     return ['data' => $all];
 }
 
-function loadReleases(string $apiUrl, string $forge): array {
-    $res = fetchAllReleases($apiUrl, $forge);
+function loadReleases(string $apiUrl, string $forge, string $githubToken = ''): array {
+    $res = fetchAllReleases($apiUrl, $forge, $githubToken);
     if (isset($res['_error'])) {
-        return ['latest' => '-', 'total' => 0, 'releases' => [], 'error' => $res['_error']];
+        return ['latest' => '-', 'latest_date' => null, 'total' => 0, 'releases' => [], 'error' => $res['_error']];
     }
     $rels = $res['data'];
 
-    $total  = 0;
-    $latest = '-';
-    $parsed = [];
+    $total      = 0;
+    $latest     = '-';
+    $latestDate = null;
+    $parsed     = [];
 
     foreach ($rels as $idx => $rel) {
-        $tag = (string)($rel['tag_name'] ?? '-');
+        $tag         = (string)($rel['tag_name'] ?? '-');
+        $publishedAt = (string)($rel['published_at'] ?? ($rel['created_at'] ?? ''));
         if ($idx === 0) {
-            $latest = $tag;
+            $latest     = $tag;
+            $latestDate = $publishedAt !== '' ? $publishedAt : null;
         }
         $assets = [];
         $relSum = 0;
@@ -313,40 +489,106 @@ function loadReleases(string $apiUrl, string $forge): array {
             ];
         }
         $parsed[] = [
-            'tag'    => $tag,
-            'sum'    => $relSum,
-            'assets' => $assets,
+            'tag'          => $tag,
+            'published_at' => $publishedAt !== '' ? $publishedAt : null,
+            'sum'          => $relSum,
+            'assets'       => $assets,
         ];
     }
 
     return [
-        'latest'   => $latest,
-        'total'    => $total,
-        'releases' => $parsed,
-        'error'    => null,
+        'latest'      => $latest,
+        'latest_date' => $latestDate,
+        'total'       => $total,
+        'releases'    => $parsed,
+        'error'       => null,
     ];
 }
 
-$items = [];
+$items      = [];
+$anyError   = false;
+$anySuccess = false;
+
 foreach ($repos as $entry) {
-    $stats = loadReleases($entry['api'], $entry['forge']);
+    $stats = loadReleases($entry['api'], $entry['forge'], $githubToken);
+    $meta  = fetchRepoMeta($entry['repo_api'], $entry['forge'], $githubToken);
+    if ($stats['error'] !== null) {
+        $anyError = true;
+    } else {
+        $anySuccess = true;
+    }
     $items[] = [
-        'repo'     => $entry['repo'],
-        'forge'    => $entry['forge'],
-        'url'      => $entry['url'],
-        'latest'   => $stats['latest'],
-        'total'    => $stats['total'],
-        'releases' => $stats['releases'],
-        'error'    => $stats['error'],
+        'repo'        => $entry['repo'],
+        'forge'       => $entry['forge'],
+        'url'         => $entry['url'],
+        'latest'      => $stats['latest'],
+        'latest_date' => $stats['latest_date'],
+        'total'       => $stats['total'],
+        'stars'       => $meta['stars'],
+        'open_issues' => $meta['open_issues'],
+        'releases'    => $stats['releases'],
+        'error'       => $stats['error'],
     ];
 }
 
+$tokenConfigured = ($githubToken !== '');
+$tokenValid      = null;
+$expiresIso      = null;
+$daysLeft        = null;
+
+if ($rateLimitInfo['expires_at'] !== null) {
+    $expTs = strtotime($rateLimitInfo['expires_at']);
+    if ($expTs !== false) {
+        $expiresIso = gmdate('c', $expTs);
+        $daysLeft   = (int)ceil(($expTs - time()) / 86400);
+    }
+}
+
+if ($tokenConfigured) {
+    if ($rateLimitInfo['auth_fail'] || ($daysLeft !== null && $daysLeft <= 0)) {
+        $tokenValid = false;
+    } elseif ($rateLimitInfo['limit'] !== null) {
+        $tokenValid = ($rateLimitInfo['limit'] > 60);
+    }
+}
+
+$tokenStatus = [
+    'configured' => $tokenConfigured,
+    'valid'      => $tokenValid,
+    'limit'      => $rateLimitInfo['limit'],
+    'remaining'  => $rateLimitInfo['remaining'],
+    'expires_at' => $expiresIso,
+    'days_left'  => $daysLeft,
+];
+
+if (!$anySuccess && $anyError && file_exists($staleFile)) {
+    $staleJson = @file_get_contents($staleFile);
+    $staleArr  = is_string($staleJson) ? json_decode($staleJson, true) : null;
+    if (is_array($staleArr) && !empty($staleArr['items'])) {
+        $staleArr['stale']        = true;
+        $staleArr['stale_from']   = $staleArr['updated'] ?? null;
+        $staleArr['token_status'] = $tokenStatus;
+        $staleArr['git']          = getGitStatusInfo($repoDir);
+        $staleArr['csrf_token']   = $csrfToken;
+        echo json_encode($staleArr, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        exit;
+    }
+}
+
+$nowStr = date('H:i:s');
 $result = [
-    'updated' => date('H:i:s'),
-    'items'   => $items,
-    'git'     => getGitStatusInfo($repoDir),
+    'updated'      => $nowStr,
+    'stale'        => false,
+    'stale_from'   => null,
+    'token_status' => $tokenStatus,
+    'items'        => $items,
+    'git'          => getGitStatusInfo($repoDir),
+    'csrf_token'   => $csrfToken,
 ];
 
 $json = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+if ($anySuccess) {
+    @file_put_contents($staleFile, $json);
+}
 @file_put_contents($cacheFile, $json);
 echo $json;

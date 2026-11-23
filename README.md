@@ -30,9 +30,10 @@ A lightweight GitHub release download tracker widget for the KeyHelp admin dashb
 
 ```text
 dashboard-layout/
-├── plugin_stats.php     # Backend endpoint fetching GitHub release & asset stats
+├── .htaccess                  # Blocks direct web access to .git/ and .conf files
+├── plugin_stats.php           # Backend endpoint fetching GitHub release & asset stats
 ├── download_box.conf.example  # Example config, copy to download_box.conf (git-ignored)
-└── download_box.js      # Frontend 3-column widget, theme sync & older-releases popup
+└── download_box.js            # Frontend 3-column widget, theme sync & older-releases popup
 ```
 
 ***
@@ -43,13 +44,15 @@ dashboard-layout/
 
 **Option A: download via `wget`** (adjust the repository slug in the URL if you chose a different repo name):
 
-```
+```bash
 mkdir -p /home/keyhelp/www/keyhelp/dashboard-layout
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 
-wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/plugin_stats.php
-wget -O download_box.conf https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/download_box.conf.example
-wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.2/download_box.js
+wget [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/htaccess.txt](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/htaccess.txt)
+mv htaccess.txt .htaccess
+wget -O plugin_stats.php [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/plugin_stats.php](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/plugin_stats.php)
+wget -O download_box.conf [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.conf.example](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.conf.example)
+wget -O download_box.js [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.js](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.js)
 ```
 
 **Option B: check out via `git`** (later updates are a simple `git pull`, see [Updating](#updating)).
@@ -96,7 +99,7 @@ Set ownership to `keyhelp:keyhelp` and apply standard file/directory permissions
 ```
 chown -R keyhelp:keyhelp /home/keyhelp/www/keyhelp/dashboard-layout
 chmod 755 /home/keyhelp/www/keyhelp/dashboard-layout
-chmod 644 /home/keyhelp/www/keyhelp/dashboard-layout/plugin_stats.php /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf /home/keyhelp/www/keyhelp/dashboard-layout/download_box.js
+chmod 644 /home/keyhelp/www/keyhelp/dashboard-layout/.htaccess /home/keyhelp/www/keyhelp/dashboard-layout/plugin_stats.php /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf.example /home/keyhelp/www/keyhelp/dashboard-layout/download_box.js
 ```
 
 ### Step 4: Add the Loader in KeyHelp White-Label JavaScript
@@ -134,7 +137,7 @@ With the git checkout, pull as the `keyhelp` user (the files belong to `keyhelp`
 su -s /bin/sh keyhelp -c "git -C /home/keyhelp/www/keyhelp/dashboard-layout pull"
 ```
 
-With the wget install, repeat the `wget` commands for `plugin_stats.php` and `download_box.js` from a newer release.
+With the wget install, repeat the `wget` commands for `htaccess.txt` (rename to `.htaccess`), `plugin_stats.php`, and `download_box.js` from a newer release (keep your existing `download_box.conf`).
 
 ## Changelog
 <details>
@@ -151,9 +154,14 @@ With the wget install, repeat the `wget` commands for `plugin_stats.php` and `do
 - **UI & Error Handling**: Renamed the card header to *Release Downloads*, added platform-specific GitHub/Git icons per column, and displayed API error messages directly inside affected columns.
 - **Config Template & Git Setup**: Replaced the tracked `download_box.conf` with `download_box.conf.example` so local configurations remain untouched during `git pull` updates.
 
-#### 1.0.2 ( 2026-11-23)
+#### v1.0.2 (2026-11-23)
 - **Added:** Status footer in the Release Downloads card displaying the installed version and current status.
 - **Added:** Automatic update check against `origin/main` with a one-click **Update** button in the dashboard when newer commits are available.
 - **Added:** Server-side `POST ?action=update` endpoint in `plugin_stats.php` to run `git pull --ff-only origin main` cleanly.
 - **Improved:** HTML escaping and theme styling for the status footer and update controls in dark and light mode.
+
+### v1.0.3 (2026-11-23)
+- **Security:** Added CSRF token and same-origin verification on `POST ?action=update` and `?refresh=1`, request cooldowns, and `.htaccess` rules blocking direct web access to `.git/` and `.conf` files.
+- **Added:** Optional `GITHUB_TOKEN` support in `download_box.conf` to raise the GitHub API rate limit, plus a status footer badge showing token validity, remaining days until expiration, and expiration/error states.
+- **Added:** Manual refresh button in the card header, 10-minute cache TTL, stale-cache fallback on API failures, release dates, and a `NEU`/`NEW` badge for releases from the last 7 days.
 </details>
