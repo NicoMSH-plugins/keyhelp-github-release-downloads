@@ -144,4 +144,9 @@ With the wget install, repeat the `wget` commands for `plugin_stats.php` and `do
 - **Initial Release**: Added the 3-column GitHub Release Downloads dashboard widget (`download_box.js`), PHP stats endpoint (`plugin_stats.php`), and `.conf`-based configuration (`download_box.conf`).
 - **Older Releases Popup**: Added a floating popup with release badges and dividers to inspect historical release downloads without expanding column heights.
 - **Theme & Locale Support**: Added automatic Dark/Light mode detection, German/English UI labels, and `pluginStatsBoxReady` event integration.
+#### v1.0.1 (2026-11-23) Thanks to [24unix](https://github.com/24unix) for adding Gitea/Forgejo support!
+- **Gitea & Forgejo Support**: Added automatic detection for self-hosted Gitea/Forgejo repositories (`/api/v1/repos/...`) alongside `github.com` URLs in `plugin_stats.php`.
+- **Full Release Pagination**: Added page-by-page release fetching (`per_page` on GitHub and `limit` / `X-Total-Count` on Gitea) so total download counts include all historical releases beyond the first page.
+- **UI & Error Handling**: Renamed the card header to *Release Downloads*, added platform-specific GitHub/Git icons per column, and displayed API error messages directly inside affected columns.
+- **Config Template & Git Setup**: Replaced the tracked `download_box.conf` with `download_box.conf.example` so local configurations remain untouched during `git pull` updates.
 </details>
