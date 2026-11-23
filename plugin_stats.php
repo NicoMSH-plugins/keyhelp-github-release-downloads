@@ -176,7 +176,7 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
         ? $tagRes['output']
         : $localCommit;
 
-    $fetchCacheFile = sys_get_temp_dir() . '/kh_plugin_stats_git_fetch_' . md5($repoDir) . '.json';
+    $fetchCacheFile = sys_get_temp_dir() . '/kh_plugin_stats_git_fetch_' . hash('sha256', $repoDir) . '.json';
     $fetchTtl = 600;
     $remoteInfo = null;
 
@@ -307,7 +307,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') 
         exit;
     }
 
-    $cooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_update_lock_' . md5($repoDir) . '.txt';
+    $cooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_update_lock_' . hash('sha256', $repoDir) . '.txt';
     $cooldownSec  = 20;
     if (file_exists($cooldownFile) && (time() - filemtime($cooldownFile)) < $cooldownSec) {
         http_response_code(429);
@@ -369,7 +369,7 @@ if ($forceRefresh) {
         exit;
     }
 
-    $refreshCooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_refresh_lock_' . md5($confFile) . '.txt';
+    $refreshCooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_refresh_lock_' . hash('sha256', $confFile) . '.txt';
     $refreshCooldownSec  = 5;
     if (file_exists($refreshCooldownFile) && (time() - filemtime($refreshCooldownFile)) < $refreshCooldownSec) {
         http_response_code(429);
@@ -379,7 +379,7 @@ if ($forceRefresh) {
     @touch($refreshCooldownFile);
 }
 
-$confHash   = is_readable($confFile) ? md5_file($confFile) : 'empty';
+$confHash   = is_readable($confFile) ? hash_file('sha256', $confFile) : 'empty';
 $cacheFile  = sys_get_temp_dir() . '/kh_plugin_stats_gh_' . $confHash . '.json';
 $staleFile  = sys_get_temp_dir() . '/kh_plugin_stats_stale_' . $confHash . '.json';
 $cacheTtl   = 600;

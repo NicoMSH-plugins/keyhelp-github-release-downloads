@@ -759,7 +759,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             const metaHtml = (hasStars || hasIssues)
                 ? `
                     <div class="kh-dl-meta-row">
-                        ${hasStars ? `<span class="kh-dl-meta-item" title="${isGerman ? 'Stars' : 'Stars'}"><i class="far fa-star"></i><span>${escapeHtml(ghData.stars)}</span></span>` : ''}
+                        ${hasStars ? `<span class="kh-dl-meta-item" title="Stars"><i class="far fa-star"></i><span>${escapeHtml(ghData.stars)}</span></span>` : ''}
                         ${hasIssues ? `<span class="kh-dl-meta-item" title="${isGerman ? 'Offene Issues' : 'Open issues'}"><i class="far fa-dot-circle"></i><span>${escapeHtml(ghData.open_issues)}</span></span>` : ''}
                     </div>
                   `
@@ -919,7 +919,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                         </span>
                         <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn">
                             <i class="fas fa-sync-alt"></i>
-                            <span>${isGerman ? 'Update' : 'Update'}</span>
+                            <span>Update</span>
                         </button>
                       `
                     : `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
@@ -969,7 +969,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 const msg = (res && res.error) ? res.error : (isGerman ? 'Update fehlgeschlagen.' : 'Update failed.');
                 $btn.prop('disabled', false);
                 $btn.find('i').removeClass('fa-spin');
-                $btn.find('span').text(isGerman ? 'Update' : 'Update');
+                $btn.find('span').text('Update');
                 $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(msg)}</span>`);
             }).fail(function(jqXHR) {
                 let errDetail = isGerman ? 'Update fehlgeschlagen.' : 'Update failed.';
@@ -978,7 +978,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 }
                 $btn.prop('disabled', false);
                 $btn.find('i').removeClass('fa-spin');
-                $btn.find('span').text(isGerman ? 'Update' : 'Update');
+                $btn.find('span').text('Update');
                 $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(errDetail)}</span>`);
             });
         });
