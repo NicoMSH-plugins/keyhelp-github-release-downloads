@@ -2,6 +2,8 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
+const PLUGIN_VERSION = '1.0.3';
+
 $confFile = __DIR__ . '/download_box.conf';
 $repoDir  = __DIR__;
 
@@ -89,14 +91,78 @@ function runGitCommand(string $gitBin, string $repoDir, array $args): array {
     ];
 }
 
-function getGitStatusInfo(string $repoDir, bool $forceFetch = false): ?array {
-    if (!is_dir($repoDir . '/.git') || !function_exists('exec')) {
+function getLatestGithubReleaseInfo(string $githubToken = '', bool $forceFetch = false): ?array {
+    $cacheFile = sys_get_temp_dir() . '/kh_plugin_stats_self_release.json';
+    $cacheTtl  = 600;
+
+    if (!$forceFetch && file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+        $cached = @json_decode((string)@file_get_contents($cacheFile), true);
+        if (is_array($cached) && !empty($cached['latest_version'])) {
+            return $cached;
+        }
+    }
+
+    $apiUrl  = 'https://api.github.com/repos/NicoMSH-plugins/keyhelp-github-release-downloads/releases/latest';
+    $headers = [
+        'User-Agent: KeyHelp-Dashboard-Stats',
+        'Accept: application/vnd.github+json',
+    ];
+    if ($githubToken !== '') {
+        $headers[] = 'Authorization: Bearer ' . $githubToken;
+    }
+
+    $ch = curl_init($apiUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT        => 6,
+        CURLOPT_HTTPHEADER     => $headers,
+    ]);
+    $raw      = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($raw === false || !is_string($raw) || $httpCode >= 400) {
         return null;
     }
 
-    $gitBin = findGitBinary();
-    if ($gitBin === null) {
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || empty($decoded['tag_name'])) {
         return null;
+    }
+
+    $info = [
+        'latest_version' => (string)$decoded['tag_name'],
+        'release_url'    => (string)($decoded['html_url'] ?? 'https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases'),
+    ];
+    @file_put_contents($cacheFile, json_encode($info));
+    return $info;
+}
+
+function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $githubToken = ''): ?array {
+    $hasGitDir = is_dir($repoDir . '/.git') && function_exists('exec');
+    $gitBin    = $hasGitDir ? findGitBinary() : null;
+
+    if (!$hasGitDir || $gitBin === null) {
+        $currentVersion = PLUGIN_VERSION;
+        $relInfo        = getLatestGithubReleaseInfo($githubToken, $forceFetch);
+        $latestVersion  = $relInfo['latest_version'] ?? $currentVersion;
+        $releaseUrl     = $relInfo['release_url'] ?? 'https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases';
+
+        $cleanCur  = ltrim($currentVersion, 'vV');
+        $cleanLat  = ltrim($latestVersion, 'vV');
+        $hasUpdate = ($cleanCur !== '' && $cleanLat !== '' && version_compare($cleanLat, $cleanCur, '>'));
+
+        return [
+            'mode'            => 'wget',
+            'current_version' => $currentVersion,
+            'latest_version'  => $hasUpdate ? $latestVersion : $currentVersion,
+            'commits_behind'  => $hasUpdate ? 1 : 0,
+            'has_update'      => $hasUpdate,
+            'release_url'     => $releaseUrl,
+        ];
     }
 
     $headRes = runGitCommand($gitBin, $repoDir, ['rev-parse', '--short', 'HEAD']);
@@ -153,63 +219,12 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false): ?array {
     $hasUpdate   = $behindCount > 0;
 
     return [
+        'mode'            => 'git',
         'current_version' => $currentVersion,
         'latest_version'  => $hasUpdate ? $latestTag : $currentVersion,
         'commits_behind'  => $behindCount,
         'has_update'      => $hasUpdate,
     ];
-}
-
-// POST ?action=update -> geschützt durch bestehende Session, CSRF & Same-Origin-Check + Cooldown
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') === 'update') {
-    if (!requireValidCsrfAndOrigin($hasSessionCookie, $sessionHasCsrf)) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Invalid session, CSRF token, or origin.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $cooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_update_lock_' . md5($repoDir) . '.txt';
-    $cooldownSec  = 20;
-    if (file_exists($cooldownFile) && (time() - filemtime($cooldownFile)) < $cooldownSec) {
-        http_response_code(429);
-        echo json_encode(['ok' => false, 'error' => 'Update cooldown active. Please wait a moment.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    @touch($cooldownFile);
-
-    if (!is_dir($repoDir . '/.git') || !function_exists('exec')) {
-        http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'Git repository not available.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $gitBin = findGitBinary();
-    if ($gitBin === null) {
-        http_response_code(500);
-        echo json_encode(['ok' => false, 'error' => 'Git binary not found.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $pullRes = runGitCommand($gitBin, $repoDir, ['pull', '--ff-only', 'origin', 'main']);
-    if ($pullRes['code'] !== 0) {
-        http_response_code(500);
-        echo json_encode([
-            'ok'    => false,
-            'error' => $pullRes['output'] !== '' ? $pullRes['output'] : 'git pull failed.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    foreach (glob(sys_get_temp_dir() . '/kh_plugin_stats_*') ?: [] as $tmpFile) {
-        @unlink($tmpFile);
-    }
-    getGitStatusInfo($repoDir, true);
-
-    echo json_encode([
-        'ok'     => true,
-        'output' => $pullRes['output'],
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
 }
 
 function parseConfig(string $confPath): array {
@@ -284,6 +299,58 @@ $cfg         = parseConfig($confFile);
 $repos       = $cfg['repos'];
 $githubToken = $cfg['github_token'];
 
+// POST ?action=update -> geschützt durch bestehende Session, CSRF & Same-Origin-Check + Cooldown
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') === 'update') {
+    if (!requireValidCsrfAndOrigin($hasSessionCookie, $sessionHasCsrf)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Invalid session, CSRF token, or origin.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $cooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_update_lock_' . md5($repoDir) . '.txt';
+    $cooldownSec  = 20;
+    if (file_exists($cooldownFile) && (time() - filemtime($cooldownFile)) < $cooldownSec) {
+        http_response_code(429);
+        echo json_encode(['ok' => false, 'error' => 'Update cooldown active. Please wait a moment.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    @touch($cooldownFile);
+
+    if (!is_dir($repoDir . '/.git') || !function_exists('exec')) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Git repository not available.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $gitBin = findGitBinary();
+    if ($gitBin === null) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Git binary not found.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $pullRes = runGitCommand($gitBin, $repoDir, ['pull', '--ff-only', 'origin', 'main']);
+    if ($pullRes['code'] !== 0) {
+        http_response_code(500);
+        echo json_encode([
+            'ok'    => false,
+            'error' => $pullRes['output'] !== '' ? $pullRes['output'] : 'git pull failed.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    foreach (glob(sys_get_temp_dir() . '/kh_plugin_stats_*') ?: [] as $tmpFile) {
+        @unlink($tmpFile);
+    }
+    getGitStatusInfo($repoDir, true, $githubToken);
+
+    echo json_encode([
+        'ok'     => true,
+        'output' => $pullRes['output'],
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $forceRefresh = (($_GET['refresh'] ?? '') === '1');
 if ($forceRefresh) {
     $origin  = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
@@ -321,7 +388,7 @@ if (!$forceRefresh && file_exists($cacheFile) && (time() - filemtime($cacheFile)
     $cachedJson = @file_get_contents($cacheFile);
     $cachedArr  = is_string($cachedJson) ? json_decode($cachedJson, true) : null;
     if (is_array($cachedArr) && isset($cachedArr['token_status'])) {
-        $cachedArr['git']        = getGitStatusInfo($repoDir);
+        $cachedArr['git']        = getGitStatusInfo($repoDir, false, $githubToken);
         $cachedArr['csrf_token'] = $csrfToken;
         echo json_encode($cachedArr, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         exit;
@@ -568,7 +635,7 @@ if (!$anySuccess && $anyError && file_exists($staleFile)) {
         $staleArr['stale']        = true;
         $staleArr['stale_from']   = $staleArr['updated'] ?? null;
         $staleArr['token_status'] = $tokenStatus;
-        $staleArr['git']          = getGitStatusInfo($repoDir);
+        $staleArr['git']          = getGitStatusInfo($repoDir, false, $githubToken);
         $staleArr['csrf_token']   = $csrfToken;
         echo json_encode($staleArr, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         exit;
@@ -582,7 +649,7 @@ $result = [
     'stale_from'   => null,
     'token_status' => $tokenStatus,
     'items'        => $items,
-    'git'          => getGitStatusInfo($repoDir),
+    'git'          => getGitStatusInfo($repoDir, $forceRefresh, $githubToken),
     'csrf_token'   => $csrfToken,
 ];
 

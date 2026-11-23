@@ -435,6 +435,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 background: var(--kh-dl-upd-bg);
                 border: 1px solid var(--kh-dl-upd-border);
                 cursor: pointer;
+                text-decoration: none;
                 transition: background 0.15s ease;
             }
             .kh-dl-update-btn:hover:not(:disabled) {
@@ -875,7 +876,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             return `<span class="kh-dl-token-badge kh-dl-token-badge--none" title="${escapeHtml(titleParts.join(' • '))}"><i class="fas fa-key"></i><span>${escapeHtml(label)}</span></span>`;
         }
 
-function renderStatusFooter(gitInfo, tokenStatus) {
+        function renderStatusFooter(gitInfo, tokenStatus) {
             const tokenHtml = renderTokenBadge(tokenStatus);
             if (!gitInfo || typeof gitInfo !== 'object') {
                 return tokenHtml
@@ -883,6 +884,7 @@ function renderStatusFooter(gitInfo, tokenStatus) {
                     : '';
             }
 
+            const mode = gitInfo.mode || 'git';
             const currentVer = escapeHtml(gitInfo.current_version || '-');
             const latestVer = escapeHtml(gitInfo.latest_version || currentVer);
             const hasUpdate = Boolean(gitInfo.has_update);
@@ -891,22 +893,44 @@ function renderStatusFooter(gitInfo, tokenStatus) {
                 ? `Installierte Version: <strong>${currentVer}</strong>`
                 : `Installed version: <strong>${currentVer}</strong>`;
 
-            const updateHtml = hasUpdate
-                ? `
-                    <span style="color: var(--kh-dl-upd-text); font-weight: 600;">
-                        ${isGerman ? `Neue Version verfügbar (${latestVer})` : `New version available (${latestVer})`}
-                    </span>
-                    <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn">
-                        <i class="fas fa-sync-alt"></i>
-                        <span>${isGerman ? 'Update' : 'Update'}</span>
-                    </button>
-                  `
-                : `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+            let updateHtml = '';
+            if (mode === 'wget') {
+                if (hasUpdate) {
+                    const safeRelUrl = escapeHtml(gitInfo.release_url || 'https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases');
+                    const labelText = isGerman
+                        ? `Neue Version verfügbar (${latestVer})`
+                        : `New version available (${latestVer})`;
+                    const hintText = isGerman ? 'Release öffnen' : 'Open release';
+                    updateHtml = `
+                        <span style="color: var(--kh-dl-upd-text); font-weight: 600;">${labelText}</span>
+                        <a href="${safeRelUrl}" target="_blank" rel="noopener noreferrer" class="kh-dl-update-btn">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>${hintText}</span>
+                        </a>
+                    `;
+                } else {
+                    updateHtml = `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+                }
+            } else {
+                updateHtml = hasUpdate
+                    ? `
+                        <span style="color: var(--kh-dl-upd-text); font-weight: 600;">
+                            ${isGerman ? `Neue Version verfügbar (${latestVer})` : `New version available (${latestVer})`}
+                        </span>
+                        <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn">
+                            <i class="fas fa-sync-alt"></i>
+                            <span>${isGerman ? 'Update' : 'Update'}</span>
+                        </button>
+                      `
+                    : `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+            }
+
+            const leftIcon = mode === 'wget' ? 'fas fa-download' : 'fab fa-git-alt';
 
             return `
                 <div class="kh-dl-status-footer" id="kh-dl-status-footer">
                     <div class="kh-dl-status-left" id="kh-dl-status-left">
-                        <i class="fab fa-git-alt"></i>
+                        <i class="${leftIcon}"></i>
                         <span>${verLabel}</span>
                         ${updateHtml}
                     </div>
