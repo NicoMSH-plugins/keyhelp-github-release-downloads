@@ -76,7 +76,7 @@ git checkout -t origin/main
 
 ### Step 2: Configure Your Repositories
 
-With the git checkout, create your local config from the example first (the wget download already is your config):
+Create your local config from the example first:
 
 ```
 cd /home/keyhelp/www/keyhelp/dashboard-layout
