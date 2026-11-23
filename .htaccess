@@ -1,0 +1,7 @@
+<FilesMatch "^(\.git|download_box\.conf(\.example)?|README\.md)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_authz_core.c>
+    RedirectMatch 404 /\.git(/|$)
+</IfModule>
