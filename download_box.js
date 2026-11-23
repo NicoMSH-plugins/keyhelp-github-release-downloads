@@ -54,6 +54,10 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
         const olderPayloads = new Map();
 
+        function escapeHtml(val) {
+            return $('<div>').text(String(val ?? '')).html();
+        }
+
         function isLightThemeActive() {
             const targets = [document.body, document.documentElement];
             for (const el of targets) {
@@ -104,6 +108,10 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-btn-border: rgba(59, 130, 246, 0.35);
                 --kh-dl-btn-text: #93c5fd;
                 --kh-dl-btn-hover: rgba(59, 130, 246, 0.22);
+                --kh-dl-upd-bg: rgba(34, 197, 94, 0.14);
+                --kh-dl-upd-border: rgba(34, 197, 94, 0.38);
+                --kh-dl-upd-text: #86efac;
+                --kh-dl-upd-hover: rgba(34, 197, 94, 0.24);
             }
             #plugin-stats-card[data-kh-theme="light"] {
                 --kh-dl-col-bg: #f8fafc;
@@ -124,6 +132,10 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-btn-border: rgba(37, 99, 235, 0.3);
                 --kh-dl-btn-text: #1d4ed8;
                 --kh-dl-btn-hover: rgba(37, 99, 235, 0.16);
+                --kh-dl-upd-bg: rgba(21, 128, 61, 0.1);
+                --kh-dl-upd-border: rgba(21, 128, 61, 0.32);
+                --kh-dl-upd-text: #15803d;
+                --kh-dl-upd-hover: rgba(21, 128, 61, 0.18);
             }
             .kh-dl-columns-grid {
                 display: grid;
@@ -273,6 +285,46 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 padding: 0.26rem 0.15rem;
                 color: var(--kh-dl-muted);
             }
+            .kh-dl-status-footer {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-top: 0.75rem;
+                padding-top: 0.55rem;
+                border-top: 1px solid var(--kh-dl-divider);
+                font-size: 0.75rem;
+                color: var(--kh-dl-muted);
+            }
+            .kh-dl-status-left,
+            .kh-dl-status-right {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.45rem;
+                flex-wrap: wrap;
+            }
+            .kh-dl-update-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                padding: 0.2rem 0.55rem;
+                border-radius: 5px;
+                font-size: 0.72rem;
+                font-weight: 600;
+                color: var(--kh-dl-upd-text);
+                background: var(--kh-dl-upd-bg);
+                border: 1px solid var(--kh-dl-upd-border);
+                cursor: pointer;
+                transition: background 0.15s ease;
+            }
+            .kh-dl-update-btn:hover:not(:disabled) {
+                background: var(--kh-dl-upd-hover);
+            }
+            .kh-dl-update-btn:disabled {
+                opacity: 0.65;
+                cursor: wait;
+            }
             #kh-dl-releases-popup {
                 position: fixed;
                 z-index: 99999;
@@ -421,7 +473,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
             const light = isLightThemeActive();
             const sectionsHtml = payload.releases.map(function(rel) {
-                const safeTag = $('<div>').text(rel.tag || '').html();
+                const safeTag = escapeHtml(rel.tag || '');
                 const rowsHtml = renderFileRows(rel.assets);
                 return `
                     <div class="kh-dl-popup-rel-item">
@@ -431,7 +483,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 `;
             }).join('');
 
-            const safeRepoTitle = $('<div>').text(payload.title || 'Releases').html();
+            const safeRepoTitle = escapeHtml(payload.title || 'Releases');
             const olderTitle = isGerman ? 'Ältere Releases' : 'Older Releases';
             const $popup = $(`
                 <div id="kh-dl-releases-popup" data-kh-theme="${light ? 'light' : 'dark'}">
@@ -494,8 +546,8 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             }
 
             const rows = assets.map(function(a) {
-                const safeName = $('<div>').text(a.name || '').html();
-                const safeCount = $('<div>').text(String(a.count ?? 0)).html();
+                const safeName = escapeHtml(a.name || '');
+                const safeCount = escapeHtml(a.count ?? 0);
                 return `
                     <div class="kh-dl-file-row" title="${safeName}">
                         <span class="kh-dl-file-name">${safeName}</span>
@@ -529,7 +581,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
             return `
                 <div class="kh-dl-older-wrap">
-                    <button type="button" class="kh-dl-popup-btn" data-repo-key="${$('<div>').text(repoKey).html()}">
+                    <button type="button" class="kh-dl-popup-btn" data-repo-key="${escapeHtml(repoKey)}">
                         <i class="fas fa-history"></i>
                         <span>${btnLabel}</span>
                     </button>
@@ -546,17 +598,17 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             const repoUrl = ghData.url || (ghData.repo ? `https://github.com/${ghData.repo}` : '');
             const iconClass = forgeIconClass(ghData.forge);
 
-            const safeTitleText = $('<div>').text(titleText).html();
-            const safeLatestTag = $('<div>').text(latestTag).html();
-            const safeTotal = $('<div>').text(String(total)).html();
-            const safeUrl = $('<div>').text(repoUrl).html();
+            const safeTitleText = escapeHtml(titleText);
+            const safeLatestTag = escapeHtml(latestTag);
+            const safeTotal = escapeHtml(total);
+            const safeUrl = escapeHtml(repoUrl);
 
             const titleHtml = safeUrl
                 ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitleText}</a>`
                 : safeTitleText;
 
             const latestRowsHtml = ghData.error
-                ? `<div class="kh-dl-empty" style="color: #dc2626;">${$('<div>').text(String(ghData.error)).html()}</div>`
+                ? `<div class="kh-dl-empty" style="color: #dc2626;">${escapeHtml(ghData.error)}</div>`
                 : releases.length
                     ? renderFileRows(releases[0].assets)
                     : `<div class="kh-dl-empty">-</div>`;
@@ -584,10 +636,83 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             `;
         }
 
+        function renderStatusFooter(gitInfo) {
+            if (!gitInfo || typeof gitInfo !== 'object') {
+                return '';
+            }
+
+            const currentVer = escapeHtml(gitInfo.current_version || '-');
+            const latestVer = escapeHtml(gitInfo.latest_version || currentVer);
+            const hasUpdate = Boolean(gitInfo.has_update);
+
+            const verLabel = isGerman
+                ? `Installierte Version: <strong>${currentVer}</strong>`
+                : `Installed version: <strong>${currentVer}</strong>`;
+
+            const rightHtml = hasUpdate
+                ? `
+                    <span style="color: var(--kh-dl-upd-text); font-weight: 600;">
+                        ${isGerman ? `Neue Version verfügbar (${latestVer})` : `New version available (${latestVer})`}
+                    </span>
+                    <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>${isGerman ? 'Update' : 'Update'}</span>
+                    </button>
+                  `
+                : `<span>${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+
+            return `
+                <div class="kh-dl-status-footer" id="kh-dl-status-footer">
+                    <div class="kh-dl-status-left">
+                        <i class="fab fa-git-alt"></i>
+                        <span>${verLabel}</span>
+                    </div>
+                    <div class="kh-dl-status-right" id="kh-dl-status-right">
+                        ${rightHtml}
+                    </div>
+                </div>
+            `;
+        }
+
         $('#plugin-stats-content').on('click', '.kh-dl-popup-btn', function(e) {
             e.stopPropagation();
             const repoKey = $(this).attr('data-repo-key');
             openReleasesPopup(this, repoKey);
+        });
+
+        $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
+            e.preventDefault();
+            const $btn = $(this);
+            if ($btn.prop('disabled')) return;
+
+            $btn.prop('disabled', true);
+            $btn.find('i').addClass('fa-spin');
+            $btn.find('span').text(isGerman ? 'Aktualisiere...' : 'Updating...');
+
+            $.ajax({
+                url: 'dashboard-layout/plugin_stats.php?action=update',
+                method: 'POST',
+                dataType: 'json'
+            }).done(function(res) {
+                if (res && res.ok) {
+                    window.location.reload();
+                    return;
+                }
+                const msg = (res && res.error) ? res.error : (isGerman ? 'Update fehlgeschlagen.' : 'Update failed.');
+                $btn.prop('disabled', false);
+                $btn.find('i').removeClass('fa-spin');
+                $btn.find('span').text(isGerman ? 'Update' : 'Update');
+                $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(msg)}</span>`);
+            }).fail(function(jqXHR) {
+                let errDetail = isGerman ? 'Update fehlgeschlagen.' : 'Update failed.';
+                if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
+                    errDetail = jqXHR.responseJSON.error;
+                }
+                $btn.prop('disabled', false);
+                $btn.find('i').removeClass('fa-spin');
+                $btn.find('span').text(isGerman ? 'Update' : 'Update');
+                $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(errDetail)}</span>`);
+            });
         });
 
         // 2. Einmaliger Abruf beim Öffnen des Dashboards (kein setInterval)
@@ -595,12 +720,13 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             let updatedTime = data.updated || '-';
             $('#plugin-stats-updated').text((isGerman ? 'Stand: ' : 'Updated: ') + updatedTime);
 
+            const footerHtml = renderStatusFooter(data.git);
             let items = Array.isArray(data.items) ? data.items : [];
             if (!items.length) {
                 let emptyMsg = isGerman
                     ? 'Keine Repository-URLs (GitHub/Gitea) in <code>download_box.conf</code> eingetragen. Falls die Datei fehlt, <code>download_box.conf.example</code> nach <code>download_box.conf</code> kopieren und mindestens eine Repository-URL eintragen.'
                     : 'No repository URLs (GitHub/Gitea) found in <code>download_box.conf</code>. If the file is missing, copy <code>download_box.conf.example</code> to <code>download_box.conf</code> and add at least one repository URL.';
-                $('#plugin-stats-content').html(`<div class="kh-dl-empty">${emptyMsg}</div>`);
+                $('#plugin-stats-content').html(`<div class="kh-dl-empty">${emptyMsg}</div>${footerHtml}`);
                 syncThemeMode();
                 $(document).trigger('pluginStatsBoxReady');
                 return;
@@ -608,7 +734,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
 
             olderPayloads.clear();
             const colsHtml = items.map(renderGhColumn).join('');
-            $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>`);
+            $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>${footerHtml}`);
             syncThemeMode();
             $(document).trigger('pluginStatsBoxReady');
         }).fail(function(jqXHR) {
