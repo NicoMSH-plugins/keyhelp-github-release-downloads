@@ -2,7 +2,7 @@
 
 A lightweight GitHub release download tracker widget for the KeyHelp admin dashboard (`admin_dashboard`), fetching live release and asset download statistics via a small PHP backend (`plugin_stats.php`) configured through `download_box.conf`.
 
-<img width="826" height="543" alt="Screenshot 2026-11-22 142719" src="[https://github.com/user-attachments/assets/dab1cc48-8ad4-4d01-a50d-dc9e6c5d7c45](https://github.com/user-attachments/assets/dab1cc48-8ad4-4d01-a50d-dc9e6c5d7c45)" />
+<img width="814" height="586" alt="Screenshot 2026-11-24 172907" src="https://github.com/user-attachments/assets/13f44631-3d74-4549-952e-4eb90316bf8f" />
 
 > [!IMPORTANT]
 >
