@@ -52,7 +52,31 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
         let isGerman = htmlLang.toLowerCase().startsWith('de');
         let currentCsrfToken = '';
 
+        const SORT_STORAGE_KEY = 'kh_dl_sort_mode';
+        const VALID_SORTS = ['manual', 'downloads', 'latest', 'name'];
+        let lastRawItems = [];
+        let lastFooterHtml = '';
+
         const olderPayloads = new Map();
+
+        function getSavedSortMode() {
+            try {
+                const v = window.localStorage.getItem(SORT_STORAGE_KEY);
+                return VALID_SORTS.includes(v) ? v : '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function setSavedSortMode(mode) {
+            try {
+                if (VALID_SORTS.includes(mode)) {
+                    window.localStorage.setItem(SORT_STORAGE_KEY, mode);
+                }
+            } catch (e) {
+                // ignore storage errors
+            }
+        }
 
         function escapeHtml(val) {
             return $('<div>').text(String(val ?? '')).html();
@@ -100,6 +124,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-badge-bg: rgba(148, 163, 184, 0.12);
                 --kh-dl-badge-border: rgba(148, 163, 184, 0.22);
                 --kh-dl-badge-text: #e2e8f0;
+                --kh-dl-select-bg: #1e293b;
                 --kh-dl-new-bg: rgba(56, 189, 248, 0.15);
                 --kh-dl-new-border: rgba(56, 189, 248, 0.38);
                 --kh-dl-new-text: #7dd3fc;
@@ -133,6 +158,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 --kh-dl-badge-bg: #e2e8f0;
                 --kh-dl-badge-border: #cbd5e1;
                 --kh-dl-badge-text: #1e293b;
+                --kh-dl-select-bg: #ffffff;
                 --kh-dl-new-bg: rgba(2, 132, 199, 0.11);
                 --kh-dl-new-border: rgba(2, 132, 199, 0.32);
                 --kh-dl-new-text: #0369a1;
@@ -189,11 +215,28 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             .kh-dl-header-meta {
                 display: inline-flex;
                 align-items: center;
+                flex-wrap: wrap;
                 gap: 0.65rem;
                 margin-left: auto;
                 padding-right: 1rem;
                 font-size: 12px;
                 color: var(--kh-dl-muted);
+            }
+            .kh-dl-sort-select {
+                height: 24px;
+                padding: 0 0.45rem;
+                border-radius: 5px;
+                border: 1px solid var(--kh-dl-badge-border);
+                background: var(--kh-dl-select-bg);
+                color: var(--kh-dl-badge-text);
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                outline: none;
+            }
+            .kh-dl-sort-select:hover,
+            .kh-dl-sort-select:focus {
+                border-color: var(--kh-dl-btn-border);
             }
             .kh-dl-header-sum {
                 font-weight: 700;
@@ -554,6 +597,20 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             }
         `;
 
+        const sortOptionsHtml = isGerman
+            ? `
+                <option value="manual">Reihenfolge: Standard</option>
+                <option value="downloads">Sortierung: Downloads</option>
+                <option value="latest">Sortierung: Neuestes</option>
+                <option value="name">Sortierung: Name (A–Z)</option>
+              `
+            : `
+                <option value="manual">Order: Default</option>
+                <option value="downloads">Sort: Downloads</option>
+                <option value="latest">Sort: Latest</option>
+                <option value="name">Sort: Name (A–Z)</option>
+              `;
+
         let $statsBox = $(`
             <div class="card" id="plugin-stats-card" style="margin-top: 0 !important; margin-bottom: 1.5rem !important;">
                 <header class="card-header">
@@ -562,6 +619,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                     </span>
                     <p class="card-header-title" style="font-size: 15px;">Release Downloads</p>
                     <div class="kh-dl-header-meta">
+                        <select class="kh-dl-sort-select" id="kh-dl-sort-select" title="${isGerman ? 'Sortierung wählen' : 'Choose sort order'}" aria-label="Sort order">
+                            ${sortOptionsHtml}
+                        </select>
                         <span class="kh-dl-header-sum" id="plugin-stats-total-sum"></span>
                         <span id="plugin-stats-updated">${isGerman ? 'Lade...' : 'Loading...'}</span>
                         <button type="button" class="kh-dl-refresh-btn" id="kh-dl-refresh-btn" title="${isGerman ? 'Jetzt aktualisieren' : 'Refresh now'}" aria-label="Refresh">
@@ -583,6 +643,61 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             anchor.$el.prepend($statsBox);
         }
         syncThemeMode();
+
+        const initialSavedSort = getSavedSortMode();
+        if (initialSavedSort) {
+            $('#kh-dl-sort-select').val(initialSavedSort);
+        }
+
+        function sortClientItems(items, sortMode) {
+            const list = items.slice();
+            if (sortMode === 'downloads') {
+                list.sort(function(a, b) {
+                    return (Number(b && b.total) || 0) - (Number(a && a.total) || 0);
+                });
+            } else if (sortMode === 'latest') {
+                list.sort(function(a, b) {
+                    const tsA = (a && a.latest_date) ? Date.parse(a.latest_date) || 0 : 0;
+                    const tsB = (b && b.latest_date) ? Date.parse(b.latest_date) || 0 : 0;
+                    return tsB - tsA;
+                });
+            } else if (sortMode === 'name') {
+                list.sort(function(a, b) {
+                    const nameA = formatRepoTitle(a && a.repo).toLowerCase();
+                    const nameB = formatRepoTitle(b && b.repo).toLowerCase();
+                    return nameA.localeCompare(nameB);
+                });
+            }
+            return list;
+        }
+
+        function renderColumnsFromCache() {
+            if (!lastRawItems.length) return;
+            const activeSort = String($('#kh-dl-sort-select').val() || 'manual');
+            const sortedItems = sortClientItems(lastRawItems, activeSort);
+            olderPayloads.clear();
+            const colsHtml = sortedItems.map(renderGhColumn).join('');
+            $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>${lastFooterHtml}`);
+            syncThemeMode();
+        }
+
+        function buildUpdateTooltip(gitInfo, latestVer) {
+            const commits = Array.isArray(gitInfo && gitInfo.commits) ? gitInfo.commits : [];
+            const header = isGerman
+                ? `Update auf ${latestVer} per git pull`
+                : `Update to ${latestVer} via git pull`;
+
+            if (!commits.length) {
+                return header;
+            }
+
+            const listTitle = isGerman ? 'Änderungen:' : 'Changes:';
+            const lines = commits.map(function(c) {
+                return '• ' + String(c || '').trim();
+            }).filter(Boolean);
+
+            return [header, '', listTitle, ...lines].join('\n');
+        }
 
         function formatShortDate(isoStr) {
             if (!isoStr) return '';
@@ -912,17 +1027,23 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                     updateHtml = `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
                 }
             } else {
-                updateHtml = hasUpdate
-                    ? `
+                if (hasUpdate) {
+                    const commits = Array.isArray(gitInfo.commits) ? gitInfo.commits : [];
+                    const tooltipText = buildUpdateTooltip(gitInfo, latestVer);
+                    const hasCommits = commits.length > 0;
+                    updateHtml = `
                         <span style="color: var(--kh-dl-upd-text); font-weight: 600;">
                             ${isGerman ? `Neue Version verfügbar (${latestVer})` : `New version available (${latestVer})`}
                         </span>
-                        <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn">
+                        <button type="button" class="kh-dl-update-btn" id="kh-dl-git-update-btn" title="${escapeHtml(tooltipText)}">
                             <i class="fas fa-sync-alt"></i>
                             <span>Update</span>
+                            ${hasCommits ? `<i class="fas fa-list-ul" style="opacity: 0.8;"></i>` : ''}
                         </button>
-                      `
-                    : `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+                    `;
+                } else {
+                    updateHtml = `<span style="opacity: 0.85;">• ${isGerman ? 'Aktuelle Version' : 'Up to date'}</span>`;
+                }
             }
 
             const leftIcon = mode === 'wget' ? 'fas fa-download' : 'fab fa-git-alt';
@@ -941,24 +1062,30 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             `;
         }
 
+        $('#kh-dl-sort-select').on('change', function() {
+            const selected = String($(this).val() || 'manual');
+            setSavedSortMode(selected);
+            renderColumnsFromCache();
+        });
+
         $('#plugin-stats-content').on('click', '.kh-dl-popup-btn', function(e) {
             e.stopPropagation();
             const repoKey = $(this).attr('data-repo-key');
             openReleasesPopup(this, repoKey);
         });
 
-$('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
+        $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
             e.preventDefault();
             const $btn = $(this);
             if ($btn.prop('disabled')) return;
 
             $btn.prop('disabled', true);
-            $btn.find('i').addClass('fa-spin');
+            $btn.find('i').first().addClass('fa-spin');
             $btn.find('span').text(isGerman ? 'Aktualisiere...' : 'Updating...');
 
             if (!currentCsrfToken) {
                 $btn.prop('disabled', false);
-                $btn.find('i').removeClass('fa-spin');
+                $btn.find('i').first().removeClass('fa-spin');
                 $btn.find('span').text('Update');
                 loadStats(false);
                 return;
@@ -976,7 +1103,7 @@ $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
                 }
                 const msg = (res && res.error) ? res.error : (isGerman ? 'Update fehlgeschlagen.' : 'Update failed.');
                 $btn.prop('disabled', false);
-                $btn.find('i').removeClass('fa-spin');
+                $btn.find('i').first().removeClass('fa-spin');
                 $btn.find('span').text('Update');
                 $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(msg)}</span>`);
             }).fail(function(jqXHR) {
@@ -985,7 +1112,7 @@ $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
                     errDetail = jqXHR.responseJSON.error;
                 }
                 $btn.prop('disabled', false);
-                $btn.find('i').removeClass('fa-spin');
+                $btn.find('i').first().removeClass('fa-spin');
                 $btn.find('span').text('Update');
                 $('#kh-dl-status-right').append(`<span style="color: #dc2626;">${escapeHtml(errDetail)}</span>`);
             });
@@ -1016,8 +1143,16 @@ $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
                     : '';
                 $('#plugin-stats-updated').text((isGerman ? 'Stand: ' : 'Updated: ') + updatedTime + staleSuffix);
 
+                const savedSort = getSavedSortMode();
+                const backendSort = (data && VALID_SORTS.includes(data.sort)) ? data.sort : 'manual';
+                const activeSort = savedSort || backendSort;
+                $('#kh-dl-sort-select').val(activeSort);
+
                 const footerHtml = renderStatusFooter(data.git, data.token_status);
                 let items = Array.isArray(data.items) ? data.items : [];
+
+                lastRawItems = items.slice();
+                lastFooterHtml = footerHtml;
 
                 const grandTotal = items.reduce(function(acc, it) {
                     return acc + (Number(it && it.total) || 0);
@@ -1038,10 +1173,7 @@ $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
                     return;
                 }
 
-                olderPayloads.clear();
-                const colsHtml = items.map(renderGhColumn).join('');
-                $('#plugin-stats-content').html(`<div class="kh-dl-columns-grid">${colsHtml}</div>${footerHtml}`);
-                syncThemeMode();
+                renderColumnsFromCache();
                 $(document).trigger('pluginStatsBoxReady');
             }).fail(function(jqXHR) {
                 let errMsg = isGerman

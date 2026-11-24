@@ -2,7 +2,7 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-const PLUGIN_VERSION = '1.0.3';
+const PLUGIN_VERSION = '1.0.4';
 
 $confFile = __DIR__ . '/download_box.conf';
 $repoDir  = __DIR__;
@@ -169,6 +169,7 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
             'latest_version'  => $hasUpdate ? $latestVersion : $currentVersion,
             'commits_behind'  => $hasUpdate ? 1 : 0,
             'has_update'      => $hasUpdate,
+            'commits'         => [],
             'release_url'     => $releaseUrl,
         ];
     }
@@ -190,7 +191,7 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
 
     if (!$forceFetch && file_exists($fetchCacheFile) && (time() - filemtime($fetchCacheFile)) < $fetchTtl) {
         $cached = @json_decode((string)@file_get_contents($fetchCacheFile), true);
-        if (is_array($cached)) {
+        if (is_array($cached) && array_key_exists('commits', $cached)) {
             $remoteInfo = $cached;
         }
     }
@@ -199,11 +200,22 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
         $fetchRes = runGitCommand($gitBin, $repoDir, ['fetch', 'origin', '--tags', '--prune', '--quiet']);
         $behindCount = 0;
         $latestTag = $currentVersion;
+        $commits = [];
 
         if ($fetchRes['code'] === 0) {
             $countRes = runGitCommand($gitBin, $repoDir, ['rev-list', '--count', 'HEAD..origin/main']);
             if ($countRes['code'] === 0 && is_numeric($countRes['output'])) {
                 $behindCount = (int)$countRes['output'];
+            }
+
+            if ($behindCount > 0) {
+                $logRes = runGitCommand($gitBin, $repoDir, ['log', '--oneline', '-n', '10', 'HEAD..origin/main']);
+                if ($logRes['code'] === 0 && $logRes['output'] !== '') {
+                    $commits = array_values(array_filter(
+                        preg_split('/\R+/', trim($logRes['output'])) ?: [],
+                        static fn(string $line): bool => $line !== ''
+                    ));
+                }
             }
 
             $tagsRes = runGitCommand($gitBin, $repoDir, ['tag', '--sort=-v:refname']);
@@ -218,12 +230,14 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
         $remoteInfo = [
             'behind'     => $behindCount,
             'latest_tag' => $latestTag,
+            'commits'    => $commits,
         ];
         @file_put_contents($fetchCacheFile, json_encode($remoteInfo));
     }
 
     $behindCount = (int)($remoteInfo['behind'] ?? 0);
     $latestTag   = (string)($remoteInfo['latest_tag'] ?? $currentVersion);
+    $commits     = is_array($remoteInfo['commits'] ?? null) ? $remoteInfo['commits'] : [];
     $hasUpdate   = $behindCount > 0;
 
     return [
@@ -232,6 +246,7 @@ function getGitStatusInfo(string $repoDir, bool $forceFetch = false, string $git
         'latest_version'  => $hasUpdate ? $latestTag : $currentVersion,
         'commits_behind'  => $behindCount,
         'has_update'      => $hasUpdate,
+        'commits'         => $hasUpdate ? $commits : [],
     ];
 }
 
@@ -239,6 +254,7 @@ function parseConfig(string $confPath): array {
     $result = [
         'repos'        => [],
         'github_token' => '',
+        'sort'         => 'manual',
     ];
     if (!is_readable($confPath)) {
         return $result;
@@ -259,6 +275,14 @@ function parseConfig(string $confPath): array {
 
         if (preg_match('/^GITHUB_TOKEN\s*=\s*(.+)$/i', $trimmed, $tm)) {
             $result['github_token'] = trim($tm[1], " \t\n\r\0\x0B\"'");
+            continue;
+        }
+
+        if (preg_match('/^SORT\s*=\s*(.+)$/i', $trimmed, $sm)) {
+            $sortVal = strtolower(trim($sm[1], " \t\n\r\0\x0B\"'"));
+            if (in_array($sortVal, ['manual', 'downloads', 'latest', 'name'], true)) {
+                $result['sort'] = $sortVal;
+            }
             continue;
         }
 
@@ -303,9 +327,36 @@ function parseConfig(string $confPath): array {
     return $result;
 }
 
+function getRepoDisplayName(array $item): string {
+    $repo = (string)($item['repo'] ?? '');
+    $parts = explode('/', $repo);
+    $name = end($parts);
+    return is_string($name) && $name !== '' ? $name : $repo;
+}
+
+function sortItems(array $items, string $sortMode): array {
+    if ($sortMode === 'downloads') {
+        usort($items, static function (array $a, array $b): int {
+            return ((int)($b['total'] ?? 0)) <=> ((int)($a['total'] ?? 0));
+        });
+    } elseif ($sortMode === 'latest') {
+        usort($items, static function (array $a, array $b): int {
+            $tsA = !empty($a['latest_date']) ? (int)strtotime((string)$a['latest_date']) : 0;
+            $tsB = !empty($b['latest_date']) ? (int)strtotime((string)$b['latest_date']) : 0;
+            return $tsB <=> $tsA;
+        });
+    } elseif ($sortMode === 'name') {
+        usort($items, static function (array $a, array $b): int {
+            return strcasecmp(getRepoDisplayName($a), getRepoDisplayName($b));
+        });
+    }
+    return $items;
+}
+
 $cfg         = parseConfig($confFile);
 $repos       = $cfg['repos'];
 $githubToken = $cfg['github_token'];
+$sortMode    = $cfg['sort'];
 
 // POST ?action=update -> geschützt durch bestehende Session, CSRF & Same-Origin-Check + Cooldown
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') === 'update') {
@@ -390,6 +441,8 @@ if (!$forceRefresh && file_exists($cacheFile) && (time() - filemtime($cacheFile)
     $cachedJson = @file_get_contents($cacheFile);
     $cachedArr  = is_string($cachedJson) ? json_decode($cachedJson, true) : null;
     if (is_array($cachedArr) && isset($cachedArr['token_status'])) {
+        $cachedArr['items']      = sortItems($cachedArr['items'] ?? [], $sortMode);
+        $cachedArr['sort']       = $sortMode;
         $cachedArr['git']        = getGitStatusInfo($repoDir, false, $githubToken);
         $cachedArr['csrf_token'] = $csrfToken;
         echo json_encode($cachedArr, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
@@ -600,6 +653,8 @@ foreach ($repos as $entry) {
     ];
 }
 
+$items = sortItems($items, $sortMode);
+
 $tokenConfigured = ($githubToken !== '');
 $tokenValid      = null;
 $expiresIso      = null;
@@ -634,6 +689,8 @@ if (!$anySuccess && $anyError && file_exists($staleFile)) {
     $staleJson = @file_get_contents($staleFile);
     $staleArr  = is_string($staleJson) ? json_decode($staleJson, true) : null;
     if (is_array($staleArr) && !empty($staleArr['items'])) {
+        $staleArr['items']        = sortItems($staleArr['items'], $sortMode);
+        $staleArr['sort']         = $sortMode;
         $staleArr['stale']        = true;
         $staleArr['stale_from']   = $staleArr['updated'] ?? null;
         $staleArr['token_status'] = $tokenStatus;
@@ -649,6 +706,7 @@ $result = [
     'updated'      => $nowStr,
     'stale'        => false,
     'stale_from'   => null,
+    'sort'         => $sortMode,
     'token_status' => $tokenStatus,
     'items'        => $items,
     'git'          => getGitStatusInfo($repoDir, $forceRefresh, $githubToken),

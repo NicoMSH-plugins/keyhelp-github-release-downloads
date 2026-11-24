@@ -2,7 +2,7 @@
 
 A lightweight GitHub release download tracker widget for the KeyHelp admin dashboard (`admin_dashboard`), fetching live release and asset download statistics via a small PHP backend (`plugin_stats.php`) configured through `download_box.conf`.
 
-<img width="826" height="543" alt="Screenshot 2026-11-22 142719" src="https://github.com/user-attachments/assets/dab1cc48-8ad4-4d01-a50d-dc9e6c5d7c45" />
+<img width="826" height="543" alt="Screenshot 2026-11-22 142719" src="[https://github.com/user-attachments/assets/dab1cc48-8ad4-4d01-a50d-dc9e6c5d7c45](https://github.com/user-attachments/assets/dab1cc48-8ad4-4d01-a50d-dc9e6c5d7c45)" />
 
 > [!IMPORTANT]
 >
@@ -48,25 +48,25 @@ dashboard-layout/
 mkdir -p /home/keyhelp/www/keyhelp/dashboard-layout
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 
-wget [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/htaccess.txt](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/htaccess.txt)
+wget https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.4/htaccess.txt
 mv htaccess.txt .htaccess
-wget -O plugin_stats.php [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/plugin_stats.php](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/plugin_stats.php)
-wget -O download_box.conf [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.conf.example](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.conf.example)
-wget -O download_box.js [https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.js](https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.3/download_box.js)
+wget -O plugin_stats.php https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.4/plugin_stats.php
+wget -O download_box.conf.example https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.4/download_box.conf.example
+wget -O download_box.js https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads/releases/download/1.0.4/download_box.js
 ```
 
 **Option B: check out via `git`** (later updates are a simple `git pull`, see [Updating](#updating)).
 
 If `dashboard-layout/` does not exist yet:
 
-```
+```bash
 cd /home/keyhelp/www/keyhelp
 git clone https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads.git dashboard-layout
 ```
 
 If `dashboard-layout/` already exists (e.g. because the [Dashboard Layout Customizer](https://github.com/NicoMSH-plugins/keyhelp-dashboard-layout-customizer) lives there), check the repository out into it; existing files are left alone:
 
-```
+```bash
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 git init
 git remote add origin https://github.com/NicoMSH-plugins/keyhelp-github-release-downloads.git
@@ -79,16 +79,19 @@ git checkout -t origin/main
 
 ### Step 2: Configure Your Repositories
 
-Create your local config from the example first:
+> [!NOTE]
+> Only create `download_box.conf` from `download_box.conf.example` if `download_box.conf` does not exist yet (for example on a fresh installation). If you already have a `download_box.conf`, you do not need to edit or overwrite it unless you want to add new entries or optional settings.
 
-```
+If `download_box.conf` does not exist yet, create your local config from the example first:
+
+```bash
 cd /home/keyhelp/www/keyhelp/dashboard-layout
 cp download_box.conf.example download_box.conf
 ```
 
 Edit `download_box.conf` and add the GitHub or Gitea repositories you want to track:
 
-```
+```bash
 nano /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf
 ```
 
@@ -96,7 +99,7 @@ nano /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf
 
 Set ownership to `keyhelp:keyhelp` and apply standard file/directory permissions:
 
-```
+```bash
 chown -R keyhelp:keyhelp /home/keyhelp/www/keyhelp/dashboard-layout
 chmod 755 /home/keyhelp/www/keyhelp/dashboard-layout
 chmod 644 /home/keyhelp/www/keyhelp/dashboard-layout/.htaccess /home/keyhelp/www/keyhelp/dashboard-layout/plugin_stats.php /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf /home/keyhelp/www/keyhelp/dashboard-layout/download_box.conf.example /home/keyhelp/www/keyhelp/dashboard-layout/download_box.js
@@ -106,7 +109,7 @@ chmod 644 /home/keyhelp/www/keyhelp/dashboard-layout/.htaccess /home/keyhelp/www
 
 Open your KeyHelp admin panel, go to **White-Label -> JavaScript**, and add the following snippet (if you also use `dashboard_layout.js`, load it first):
 
-```
+```javascript
 if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
     $(function() {
         const ts = '?_=' + Date.now();
@@ -133,7 +136,7 @@ Save the White-Label settings.
 
 With the git checkout, pull as the `keyhelp` user (the files belong to `keyhelp`, so git would refuse to work on them as root with "dubious ownership"). Your `download_box.conf` is not tracked and stays untouched:
 
-```
+```bash
 su -s /bin/sh keyhelp -c "git -C /home/keyhelp/www/keyhelp/dashboard-layout pull"
 ```
 
@@ -160,8 +163,13 @@ With the wget install, repeat the `wget` commands for `htaccess.txt` (rename to 
 - **Added:** Server-side `POST ?action=update` endpoint in `plugin_stats.php` to run `git pull --ff-only origin main` cleanly.
 - **Improved:** HTML escaping and theme styling for the status footer and update controls in dark and light mode.
 
-### v1.0.3 (2026-11-23)
+#### v1.0.3 (2026-11-23)
 - **Security:** Added CSRF token and same-origin verification on `POST ?action=update` and `?refresh=1`, request cooldowns, and `.htaccess` rules blocking direct web access to `.git/` and `.conf` files.
 - **Added:** Optional `GITHUB_TOKEN` support in `download_box.conf` to raise the GitHub API rate limit, plus a status footer badge showing token validity, remaining days until expiration, and expiration/error states.
 - **Added:** Manual refresh button in the card header, 10-minute cache TTL, stale-cache fallback on API failures, release dates, and a `NEU`/`NEW` badge for releases from the last 7 days.
+
+#### v1.0.4 (2026-11-24)
+- **Fixed:** Recognized KeyHelp's `KEYHELP_SESSION_ID` session cookie in `plugin_stats.php` so CSRF tokens initialize reliably for one-click dashboard updates.
+- **Added:** Interactive sort selector in the card header (`manual`, `downloads`, `latest`, `name`) with `localStorage` persistence and optional `SORT=...` default configuration in `download_box.conf`.
+- **Added:** Commit changelog preview tooltip (`git log --oneline HEAD..origin/main`) on the dashboard **Update** button when newer commits are available.
 </details>
