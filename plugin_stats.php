@@ -363,6 +363,12 @@ if ($forceRefresh) {
         exit;
     }
 
+    if (!$hasOriginOrReferer && !$hasSessionCookie) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Session or origin required for refresh.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     $refreshCooldownFile = sys_get_temp_dir() . '/kh_plugin_stats_refresh_lock_' . hash('sha256', $confFile) . '.txt';
     $refreshCooldownSec  = 5;
     if (file_exists($refreshCooldownFile) && (time() - filemtime($refreshCooldownFile)) < $refreshCooldownSec) {
