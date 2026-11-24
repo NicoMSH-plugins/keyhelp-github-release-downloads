@@ -11,7 +11,15 @@ $sessionName = (string)ini_get('session.name');
 if ($sessionName === '') {
     $sessionName = 'PHPSESSID';
 }
-$hasSessionCookie = isset($_COOKIE[$sessionName]) && is_string($_COOKIE[$sessionName]) && $_COOKIE[$sessionName] !== '';
+$hasSessionCookie =
+    (isset($_COOKIE[$sessionName]) && is_string($_COOKIE[$sessionName]) && $_COOKIE[$sessionName] !== '')
+    || (isset($_COOKIE['KEYHELP_SESSION_ID']) && is_string($_COOKIE['KEYHELP_SESSION_ID']) && $_COOKIE['KEYHELP_SESSION_ID'] !== '');
+
+if ($hasSessionCookie && isset($_COOKIE['KEYHELP_SESSION_ID']) && is_string($_COOKIE['KEYHELP_SESSION_ID']) && $_COOKIE['KEYHELP_SESSION_ID'] !== '' && $sessionName !== 'KEYHELP_SESSION_ID') {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_name('KEYHELP_SESSION_ID');
+    }
+}
 
 $csrfToken = null;
 $sessionHasCsrf = false;
@@ -38,7 +46,7 @@ function isSameOriginRequest(): bool {
     $referer = (string)($_SERVER['HTTP_REFERER'] ?? '');
     $checkUrl = $origin !== '' ? $origin : $referer;
     if ($checkUrl === '') {
-        return false;
+        return true;
     }
     $parsedHost = strtolower((string)(parse_url($checkUrl, PHP_URL_HOST) ?? ''));
     $parsedPort = parse_url($checkUrl, PHP_URL_PORT);
@@ -360,12 +368,6 @@ if ($forceRefresh) {
     if ($hasOriginOrReferer && !isSameOriginRequest()) {
         http_response_code(403);
         echo json_encode(['ok' => false, 'error' => 'Invalid origin for refresh.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    if (!$hasOriginOrReferer && !$hasSessionCookie) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Session or origin required for refresh.'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 

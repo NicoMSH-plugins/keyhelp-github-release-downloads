@@ -947,7 +947,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             openReleasesPopup(this, repoKey);
         });
 
-        $('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
+$('#plugin-stats-content').on('click', '#kh-dl-git-update-btn', function(e) {
             e.preventDefault();
             const $btn = $(this);
             if ($btn.prop('disabled')) return;
@@ -955,6 +955,14 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             $btn.prop('disabled', true);
             $btn.find('i').addClass('fa-spin');
             $btn.find('span').text(isGerman ? 'Aktualisiere...' : 'Updating...');
+
+            if (!currentCsrfToken) {
+                $btn.prop('disabled', false);
+                $btn.find('i').removeClass('fa-spin');
+                $btn.find('span').text('Update');
+                loadStats(false);
+                return;
+            }
 
             $.ajax({
                 url: 'dashboard-layout/plugin_stats.php?action=update',
