@@ -832,16 +832,37 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             return forge === 'gitea' ? 'fab fa-git-alt' : 'fab fa-github';
         }
 
-        function renderFileRows(assets) {
-            if (!Array.isArray(assets) || !assets.length) {
+        function renderFileRows(assets, extraRows = []) {
+            const list = [];
+            if (Array.isArray(assets)) {
+                assets.forEach(function(a) {
+                    list.push({
+                        name: a.name || '',
+                        count: a.count ?? 0,
+                        muted: false
+                    });
+                });
+            }
+            if (Array.isArray(extraRows)) {
+                extraRows.forEach(function(r) {
+                    list.push({
+                        name: r.name || '',
+                        count: r.count ?? 0,
+                        muted: Boolean(r.muted)
+                    });
+                });
+            }
+
+            if (!list.length) {
                 return `<div class="kh-dl-empty">-</div>`;
             }
 
-            const rows = assets.map(function(a) {
-                const safeName = escapeHtml(a.name || '');
-                const safeCount = escapeHtml(a.count ?? 0);
+            const rows = list.map(function(item) {
+                const safeName = escapeHtml(item.name);
+                const safeCount = escapeHtml(item.count);
+                const extraStyle = item.muted ? ' style="color: var(--kh-dl-muted); font-size: 0.76rem;"' : '';
                 return `
-                    <div class="kh-dl-file-row" title="${safeName}">
+                    <div class="kh-dl-file-row" title="${safeName}"${extraStyle}>
                         <span class="kh-dl-file-name">${safeName}</span>
                         <span class="kh-dl-count-plain">${safeCount}</span>
                     </div>
@@ -891,7 +912,6 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             const iconClass = forgeIconClass(ghData.forge);
 
             const safeTitleText = escapeHtml(titleText);
-            const safeLatestTag = escapeHtml(latestTag);
             const safeTotal = escapeHtml(total);
             const safeUrl = escapeHtml(repoUrl);
 
@@ -916,11 +936,25 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                 ? `<span class="kh-dl-new-badge">${isGerman ? 'NEU' : 'NEW'}</span>`
                 : '';
 
+            const gitClones = Number(ghData && ghData.git_clones) || 0;
+            const extraCloneRows = (ghData && ghData.forge === 'github' && gitClones > 0)
+                ? [{
+                    name: isGerman ? 'Git Clones (gesammelt)' : 'Git Clones (accumulated)',
+                    count: gitClones,
+                    muted: true
+                }]
+                : [];
+
+            const badgeText = (!releases.length && ghData && ghData.version_label)
+                ? ghData.version_label
+                : `Latest: ${latestTag}`;
+            const safeBadgeText = escapeHtml(badgeText);
+
             const latestRowsHtml = ghData.error
                 ? `<div class="kh-dl-empty" style="color: #dc2626;">${escapeHtml(ghData.error)}</div>`
                 : releases.length
-                    ? renderFileRows(releases[0].assets)
-                    : `<div class="kh-dl-empty">-</div>`;
+                    ? renderFileRows(releases[0].assets, extraCloneRows)
+                    : (extraCloneRows.length ? renderFileRows([], extraCloneRows) : `<div class="kh-dl-empty">-</div>`);
 
             const olderTriggerHtml = renderOlderTrigger(repoKey, titleText, releases);
 
@@ -936,7 +970,7 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
                     <div class="kh-dl-latest-section">
                         <div class="kh-dl-version-bar">
                             <div class="kh-dl-version-left">
-                                <span class="kh-dl-version-badge">Latest: ${safeLatestTag}</span>
+                                <span class="kh-dl-version-badge">${safeBadgeText}</span>
                                 ${newBadgeHtml}
                             </div>
                             ${latestDateStr ? `<span class="kh-dl-rel-date">${escapeHtml(latestDateStr)}</span>` : ''}

@@ -308,17 +308,23 @@ function parseConfig(string $confPath): array {
             if (!isset($seen[$key])) {
                 $seen[$key] = true;
                 $result['repos'][] = [
-                    'repo'  => $ownerRepo,
-                    'forge' => $isGitHub ? 'github' : 'gitea',
-                    'url'   => $isGitHub
+                    'repo'     => $ownerRepo,
+                    'forge'    => $isGitHub ? 'github' : 'gitea',
+                    'url'      => $isGitHub
                         ? 'https://github.com/' . $ownerRepo
                         : $scheme . '://' . $host . '/' . $ownerRepo,
-                    'api'   => $isGitHub
+                    'api'      => $isGitHub
                         ? 'https://api.github.com/repos/' . $ownerRepo . '/releases'
                         : $scheme . '://' . $host . '/api/v1/repos/' . $ownerRepo . '/releases',
                     'repo_api' => $isGitHub
                         ? 'https://api.github.com/repos/' . $ownerRepo
                         : $scheme . '://' . $host . '/api/v1/repos/' . $ownerRepo,
+                    'clones_api' => $isGitHub
+                        ? 'https://api.github.com/repos/' . $ownerRepo . '/traffic/clones'
+                        : null,
+                    'version_api' => $isGitHub
+                        ? 'https://raw.githubusercontent.com/' . $ownerRepo . '/main/VERSION'
+                        : null,
                 ];
             }
         }
@@ -399,6 +405,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_GET['action'] ?? '') 
     }
 
     foreach (glob(sys_get_temp_dir() . '/kh_plugin_stats_*') ?: [] as $tmpFile) {
+        if (str_contains(basename($tmpFile), 'kh_plugin_stats_clones_')) {
+            continue;
+        }
         @unlink($tmpFile);
     }
     getGitStatusInfo($repoDir, true, $githubToken);
@@ -520,29 +529,118 @@ function fetchJson(string $url, string $forge, string $githubToken = ''): array 
     }
 
     if ($raw === false || !is_string($raw)) {
-        return ['_error' => $err !== '' ? $err : 'Request fehlgeschlagen'];
+        return ['_error' => $err !== '' ? $err : 'Request fehlgeschlagen', 'http_code' => $httpCode];
     }
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) {
-        return ['_error' => 'Ungültiges JSON'];
+        return ['_error' => 'Ungültiges JSON', 'http_code' => $httpCode];
     }
     if ($httpCode >= 400) {
         $msg = (string)($decoded['message'] ?? ('HTTP ' . $httpCode));
-        return ['_error' => $msg];
+        return ['_error' => $msg, 'http_code' => $httpCode];
     }
 
-    return ['data' => $decoded, 'totalCount' => $totalCount];
+    return ['data' => $decoded, 'totalCount' => $totalCount, 'http_code' => $httpCode];
+}
+
+function fetchMainVersion(string $versionUrl, string $githubToken = ''): ?string {
+    if ($versionUrl === '') {
+        return null;
+    }
+    $headers = [
+        'User-Agent: KeyHelp-Dashboard-Stats',
+    ];
+    if ($githubToken !== '') {
+        $headers[] = 'Authorization: Bearer ' . $githubToken;
+    }
+
+    $ch = curl_init($versionUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT        => 4,
+        CURLOPT_HTTPHEADER     => $headers,
+    ]);
+    $raw      = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($raw === false || !is_string($raw) || $httpCode >= 400) {
+        return null;
+    }
+    $ver = trim($raw);
+    if ($ver === '' || strlen($ver) > 40 || str_contains($ver, '<html')) {
+        return null;
+    }
+    return $ver;
+}
+
+function loadPersistentClones(string $repoSlug, ?string $clonesApiUrl, string $githubToken): array {
+    $storeFile = sys_get_temp_dir() . '/kh_plugin_stats_clones_' . hash('sha256', strtolower($repoSlug)) . '.json';
+    $store = [
+        'days'    => [],
+        'uniques' => [],
+        'total'   => 0,
+    ];
+
+    if (is_readable($storeFile)) {
+        $existing = @json_decode((string)@file_get_contents($storeFile), true);
+        if (is_array($existing)) {
+            $store['days']    = is_array($existing['days'] ?? null) ? $existing['days'] : [];
+            $store['uniques'] = is_array($existing['uniques'] ?? null) ? $existing['uniques'] : [];
+        }
+    }
+
+    if ($clonesApiUrl !== null && $githubToken !== '') {
+        $res = fetchJson($clonesApiUrl, 'github', $githubToken);
+        if (!isset($res['_error']) && is_array($res['data']['clones'] ?? null)) {
+            foreach ($res['data']['clones'] as $entry) {
+                $ts  = (string)($entry['timestamp'] ?? '');
+                $day = substr($ts, 0, 10);
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) {
+                    $cnt = max(0, (int)($entry['count'] ?? 0));
+                    $uniq = max(0, (int)($entry['uniques'] ?? 0));
+                    // Innerhalb des aktuellen 14-Tage-Fensters jeweils den höchsten gemeldeten Tageswert behalten
+                    if (!isset($store['days'][$day]) || $cnt > (int)$store['days'][$day]) {
+                        $store['days'][$day] = $cnt;
+                    }
+                    if (!isset($store['uniques'][$day]) || $uniq > (int)$store['uniques'][$day]) {
+                        $store['uniques'][$day] = $uniq;
+                    }
+                }
+            }
+            ksort($store['days']);
+            ksort($store['uniques']);
+            $sum = 0;
+            foreach ($store['days'] as $c) {
+                $sum += (int)$c;
+            }
+            $store['total'] = $sum;
+            @file_put_contents($storeFile, json_encode($store, JSON_PRETTY_PRINT));
+        }
+    }
+
+    $sum = 0;
+    foreach ($store['days'] as $c) {
+        $sum += (int)$c;
+    }
+    $store['total'] = $sum;
+
+    return $store;
 }
 
 function fetchRepoMeta(string $repoApiUrl, string $forge, string $githubToken = ''): array {
     $res = fetchJson($repoApiUrl, $forge, $githubToken);
     if (isset($res['_error']) || !is_array($res['data'] ?? null)) {
-        return ['stars' => null, 'open_issues' => null];
+        return ['stars' => null, 'open_issues' => null, 'pushed_at' => null];
     }
     $d = $res['data'];
     return [
         'stars'       => isset($d['stargazers_count']) ? (int)$d['stargazers_count'] : (isset($d['stars_count']) ? (int)$d['stars_count'] : null),
         'open_issues' => isset($d['open_issues_count']) ? (int)$d['open_issues_count'] : null,
+        'pushed_at'   => isset($d['pushed_at']) && is_string($d['pushed_at']) ? $d['pushed_at'] : null,
     ];
 }
 
@@ -583,11 +681,11 @@ function fetchAllReleases(string $apiUrl, string $forge, string $githubToken = '
 function loadReleases(string $apiUrl, string $forge, string $githubToken = ''): array {
     $res = fetchAllReleases($apiUrl, $forge, $githubToken);
     if (isset($res['_error'])) {
-        return ['latest' => '-', 'latest_date' => null, 'total' => 0, 'releases' => [], 'error' => $res['_error']];
+        return ['latest' => '-', 'latest_date' => null, 'asset_total' => 0, 'releases' => [], 'error' => $res['_error']];
     }
     $rels = $res['data'];
 
-    $total      = 0;
+    $assetTotal = 0;
     $latest     = '-';
     $latestDate = null;
     $parsed     = [];
@@ -602,9 +700,9 @@ function loadReleases(string $apiUrl, string $forge, string $githubToken = ''): 
         $assets = [];
         $relSum = 0;
         foreach (($rel['assets'] ?? []) as $a) {
-            $cnt     = (int)($a['download_count'] ?? 0);
-            $relSum += $cnt;
-            $total  += $cnt;
+            $cnt         = (int)($a['download_count'] ?? 0);
+            $relSum     += $cnt;
+            $assetTotal += $cnt;
             $assets[] = [
                 'name'  => (string)($a['name'] ?? ''),
                 'count' => $cnt,
@@ -621,7 +719,7 @@ function loadReleases(string $apiUrl, string $forge, string $githubToken = ''): 
     return [
         'latest'      => $latest,
         'latest_date' => $latestDate,
-        'total'       => $total,
+        'asset_total' => $assetTotal,
         'releases'    => $parsed,
         'error'       => null,
     ];
@@ -632,24 +730,51 @@ $anyError   = false;
 $anySuccess = false;
 
 foreach ($repos as $entry) {
-    $stats = loadReleases($entry['api'], $entry['forge'], $githubToken);
-    $meta  = fetchRepoMeta($entry['repo_api'], $entry['forge'], $githubToken);
+    $stats       = loadReleases($entry['api'], $entry['forge'], $githubToken);
+    $meta        = fetchRepoMeta($entry['repo_api'], $entry['forge'], $githubToken);
+    $cloneData   = ($entry['forge'] === 'github')
+        ? loadPersistentClones($entry['repo'], $entry['clones_api'], $githubToken)
+        : ['total' => 0, 'days' => [], 'uniques' => []];
+    $cloneTotal  = (int)($cloneData['total'] ?? 0);
+    $assetTotal  = (int)($stats['asset_total'] ?? 0);
+    $combinedTot = $assetTotal + $cloneTotal;
+
+    $latestTag  = $stats['latest'];
+    $latestDate = $stats['latest_date'];
+    $verLabel   = null;
+
+    if ($stats['error'] === null && empty($stats['releases']) && $entry['forge'] === 'github') {
+        $mainVer = fetchMainVersion($entry['version_api'] ?? '', $githubToken);
+        if ($mainVer !== null) {
+            $verLabel = 'Main: ' . $mainVer;
+        } else {
+            $verLabel = 'Git (main)';
+        }
+        if ($latestDate === null && !empty($meta['pushed_at'])) {
+            $latestDate = $meta['pushed_at'];
+        }
+    }
+
     if ($stats['error'] !== null) {
         $anyError = true;
     } else {
         $anySuccess = true;
     }
+
     $items[] = [
-        'repo'        => $entry['repo'],
-        'forge'       => $entry['forge'],
-        'url'         => $entry['url'],
-        'latest'      => $stats['latest'],
-        'latest_date' => $stats['latest_date'],
-        'total'       => $stats['total'],
-        'stars'       => $meta['stars'],
-        'open_issues' => $meta['open_issues'],
-        'releases'    => $stats['releases'],
-        'error'       => $stats['error'],
+        'repo'            => $entry['repo'],
+        'forge'           => $entry['forge'],
+        'url'             => $entry['url'],
+        'latest'          => $latestTag,
+        'version_label'   => $verLabel,
+        'latest_date'     => $latestDate,
+        'total'           => $combinedTot,
+        'asset_downloads' => $assetTotal,
+        'git_clones'      => $cloneTotal,
+        'stars'           => $meta['stars'],
+        'open_issues'     => $meta['open_issues'],
+        'releases'        => $stats['releases'],
+        'error'           => $stats['error'],
     ];
 }
 
