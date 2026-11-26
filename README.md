@@ -172,4 +172,9 @@ With the wget install, repeat the `wget` commands for `htaccess.txt` (rename to 
 - **Fixed:** Recognized KeyHelp's `KEYHELP_SESSION_ID` session cookie in `plugin_stats.php` so CSRF tokens initialize reliably for one-click dashboard updates.
 - **Added:** Interactive sort selector in the card header (`manual`, `downloads`, `latest`, `name`) with `localStorage` persistence and optional `SORT=...` default configuration in `download_box.conf`.
 - **Added:** Commit changelog preview tooltip (`git log --oneline HEAD..origin/main`) on the dashboard **Update** button when newer commits are available.
+
+#### v1.0.5 (2026-11-26)
+- **Added:** Persistent daily Git clone tracking (`/traffic/clones`) in `plugin_stats.php` with long-term storage beyond GitHub's 14-day window, aggregating unique daily cloners (`uniques`) into repository totals and displaying a *Git Clones (gesammelt)* / *Git Clones (accumulated)* row in `download_box.js`.
+- **Added:** Fallback version detection from the repository's `VERSION` file (`raw.githubusercontent.com`) for repositories without formal GitHub releases.
+- **Fixed:** Adjusted scrollbar spacing and gutter styling in the older-releases popup so download counts remain clearly visible while scrolling.
 </details>

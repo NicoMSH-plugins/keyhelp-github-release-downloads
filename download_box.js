@@ -596,6 +596,9 @@ if ('admin_dashboard' === getUrlQueryParameterValue('page')) {
             }
             .kh-dl-popup-body {
                 overflow-y: auto;
+                scrollbar-gutter: stable;
+                padding-right: 10px;
+                margin-right: -4px;
                 display: flex;
                 flex-direction: column;
             }

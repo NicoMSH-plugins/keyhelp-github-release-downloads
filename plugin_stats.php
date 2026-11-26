@@ -622,11 +622,16 @@ function loadPersistentClones(string $repoSlug, ?string $clonesApiUrl, string $g
         }
     }
 
-    $sum = 0;
-    foreach ($store['days'] as $c) {
-        $sum += (int)$c;
+    $uniqSum = 0;
+    foreach ($store['uniques'] as $u) {
+        $uniqSum += (int)$u;
     }
-    $store['total'] = $sum;
+    $rawSum = 0;
+    foreach ($store['days'] as $d) {
+        $rawSum += (int)$d;
+    }
+    $store['total']     = $uniqSum;
+    $store['raw_total'] = $rawSum;
 
     return $store;
 }
@@ -771,6 +776,7 @@ foreach ($repos as $entry) {
         'total'           => $combinedTot,
         'asset_downloads' => $assetTotal,
         'git_clones'      => $cloneTotal,
+        'git_clones_raw'  => (int)($cloneData['raw_total'] ?? $cloneTotal),
         'stars'           => $meta['stars'],
         'open_issues'     => $meta['open_issues'],
         'releases'        => $stats['releases'],
